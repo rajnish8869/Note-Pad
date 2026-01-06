@@ -897,7 +897,28 @@ export default function App() {
 
     const savedNotes = localStorage.getItem('notes');
     if (savedNotes) {
-      setNotes(JSON.parse(savedNotes));
+      let loadedNotes: Note[] = JSON.parse(savedNotes);
+
+      // --- TRASH AUTO-DELETE LOGIC ---
+      // Remove notes that have been in trash for > 30 days
+      const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      
+      const filteredNotes = loadedNotes.filter(note => {
+        if (note.isTrashed && note.deletedAt) {
+            const timeDiff = now - note.deletedAt;
+            // Return false to remove if older than 30 days
+            return timeDiff <= THIRTY_DAYS_MS;
+        }
+        return true; // Keep active notes or trash without timestamp (legacy support)
+      });
+
+      // If items were removed, log it (optional) or just update state
+      if (filteredNotes.length < loadedNotes.length) {
+          console.log(`Cleaned up ${loadedNotes.length - filteredNotes.length} expired items from trash.`);
+      }
+
+      setNotes(filteredNotes);
     } else {
         const welcome: Note = {
             id: 'welcome-1',
@@ -1277,11 +1298,21 @@ export default function App() {
         <main className="flex-1 px-4 pb-24 -mt-2">
             {filteredNotes.length === 0 ? (
                 <div className={`flex flex-col items-center justify-center h-[60vh] ${styles.secondaryText}`}>
-                    <div className={`p-6 rounded-full mb-4 ${theme === 'neo-glass' ? 'bg-white/10' : (theme === 'vision' ? 'bg-[#141F3A]' : 'bg-gray-100 dark:bg-white/5')}`}>
-                        <Icon name={view === 'TRASH' ? 'trash' : (isIncognito ? 'eyeOff' : 'cloud')} size={48} className="opacity-50" />
+                    <div className={`p-8 rounded-full mb-6 animate-pulse ${theme === 'neo-glass' ? 'bg-white/5' : (theme === 'vision' ? 'bg-[#141F3A]' : 'bg-gray-100 dark:bg-white/5')}`}>
+                        <Icon 
+                            name={searchQuery ? 'search' : (view === 'TRASH' ? 'trash' : (isIncognito ? 'incognito' : 'fileText'))} 
+                            size={64} 
+                            className={`opacity-40 ${theme === 'vision' ? 'text-[#2F6BFF]' : ''}`} 
+                        />
                     </div>
-                    <p className="font-medium">{isIncognito ? "Incognito Mode" : "No notes found"}</p>
-                    {view === 'LIST' && <p className="text-sm mt-2">{isIncognito ? "Notes created here are temporary." : "Tap + to create a note"}</p>}
+                    <p className="font-bold text-lg">{searchQuery ? "No results found" : (isIncognito ? "Incognito Mode" : "No notes here")}</p>
+                    <p className="text-sm mt-2 max-w-[200px] text-center opacity-70">
+                        {searchQuery 
+                            ? `Couldn't find anything matching "${searchQuery}"`
+                            : (isIncognito 
+                                ? "Notes created here are not saved to storage." 
+                                : (view === 'TRASH' ? "Trash is empty" : "Create your first note to get started"))}
+                    </p>
                 </div>
             ) : (
                 <div className={`${layoutMode === 'GRID' ? 'columns-2 md:columns-3 gap-4 space-y-4' : 'flex flex-col gap-4'}`}>
