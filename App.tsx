@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
 import { ViewState, Note, NoteSecurity } from './types';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { SecurityProvider, useSecurity } from './contexts/SecurityContext';
@@ -37,6 +38,80 @@ const MainApp = () => {
   
   const [showLockSelection, setShowLockSelection] = useState(false);
   const [isLockingGlobal, setIsLockingGlobal] = useState(false); // Used when confirming global PIN to lock a note
+
+  // State Ref for Back Button Listener
+  const stateRef = useRef({
+    view, isDrawerOpen, showAuthModal, showSecuritySetup, 
+    showLockSelection, isAppLocked
+  });
+
+  useEffect(() => {
+    stateRef.current = { 
+        view, isDrawerOpen, showAuthModal, showSecuritySetup, 
+        showLockSelection, isAppLocked
+    };
+  }, [view, isDrawerOpen, showAuthModal, showSecuritySetup, showLockSelection, isAppLocked]);
+
+  useEffect(() => {
+    const backListener = CapacitorApp.addListener('backButton', ({ canGoBack }) => {
+        const state = stateRef.current;
+        
+        // 1. Critical Overlays (Security)
+        if (state.isAppLocked) {
+            CapacitorApp.exitApp();
+            return;
+        }
+
+        // 2. Modals managed by App.tsx
+        if (state.showAuthModal) {
+            setShowAuthModal(false);
+            setPendingAuthNote(null);
+            setIsLockingGlobal(false);
+            return;
+        }
+        if (state.showSecuritySetup) {
+            setShowSecuritySetup(false);
+            return;
+        }
+        if (state.showLockSelection) {
+            setShowLockSelection(false);
+            return;
+        }
+
+        // 3. Drawer
+        if (state.isDrawerOpen) {
+            setIsDrawerOpen(false);
+            return;
+        }
+
+        // 4. View Navigation
+        switch (state.view) {
+            case 'EDITOR':
+                // Note: EditorView will save on unmount via its own cleanup
+                setView('LIST');
+                setActiveNote(null);
+                break;
+            case 'SETTINGS':
+                setView('LIST');
+                break;
+            case 'TRASH':
+                setView('LIST');
+                break;
+            case 'FOLDER':
+                setView('LIST');
+                setCurrentFolderId(null);
+                break;
+            case 'LIST':
+            default:
+                CapacitorApp.exitApp();
+                break;
+        }
+    });
+
+    return () => {
+        backListener.then(handler => handler.remove());
+    };
+  }, []);
 
   // Handle Note Navigation
   const handleNoteClick = (note: Note) => {
@@ -144,22 +219,13 @@ const MainApp = () => {
   const handleLockToggleRequest = () => {
       if (!activeNote) return;
 
-      if (activeNote.isLocked) {
-          // Unlock
-          // We assume we are in the editor and thus authorized/decrypted
-          const unlockedNote: Note = { 
-              ...activeNote, 
-              isLocked: false, 
-              encryptedData: undefined,
-              lockMode: undefined, 
-              security: undefined 
-          };
-          updateNote(unlockedNote);
-          setActiveNote(unlockedNote);
-      } else {
-          // Lock - Show Selection
+      if (!activeNote.isLocked) {
+          // Lock Request: Show Selection
           setShowLockSelection(true);
       }
+      // Note: If activeNote.isLocked is true (unlock request), 
+      // it is now handled entirely inside EditorView.tsx which 
+      // has access to the decrypted content to safely save the unlocked state.
   };
 
   const handleSelectGlobalLock = () => {

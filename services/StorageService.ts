@@ -48,19 +48,21 @@ export class StorageService {
 
   static async saveMedia(base64Data: string): Promise<string> {
       try {
-          // Extract mime
-          const match = base64Data.match(/^data:(.+);base64,(.+)$/);
-          if (!match) return ''; 
+          // Robust parsing of data URL
+          // Split by comma to separate metadata from data
+          const parts = base64Data.split(',');
+          if (parts.length < 2) return ''; 
           
-          const mime = match[1];
-          const rawData = match[2];
+          const header = parts[0];
+          const rawData = parts[1];
+          
           let ext = 'bin';
-          if (mime.includes('image/jpeg')) ext = 'jpg';
-          else if (mime.includes('image/png')) ext = 'png';
-          else if (mime.includes('image/gif')) ext = 'gif';
-          else if (mime.includes('audio/webm')) ext = 'webm';
-          else if (mime.includes('audio/mp3')) ext = 'mp3';
-          else if (mime.includes('audio/wav')) ext = 'wav';
+          if (header.includes('image/jpeg')) ext = 'jpg';
+          else if (header.includes('image/png')) ext = 'png';
+          else if (header.includes('image/gif')) ext = 'gif';
+          else if (header.includes('audio/webm')) ext = 'webm';
+          else if (header.includes('audio/mp3')) ext = 'mp3';
+          else if (header.includes('audio/wav')) ext = 'wav';
 
           const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 5)}.${ext}`;
 
@@ -93,6 +95,7 @@ export class StorageService {
           if(ext === 'mp3') mime = 'audio/mp3';
           if(ext === 'wav') mime = 'audio/wav';
           
+          // Filesystem.readFile returns the raw data string (base64) in `data`
           return `data:${mime};base64,${file.data}`;
       } catch (e) {
           console.error("Failed to load media", fileName, e);

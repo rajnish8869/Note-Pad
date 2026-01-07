@@ -47,22 +47,42 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const contentRef = useRef<HTMLDivElement>(null);
   const saveTimeoutRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Ref to track the last encrypted data we saved to prevent reload loops
+  const lastSavedEncryptedDataRef = useRef<string | null>(null);
 
   // Helper: Expand placeholders to real base64 for display
   const expandMedia = useCallback(async (html: string): Promise<string> => {
-      const regex = /src="\[\[FILE:([^"]+)\]\]"/g;
-      const matches = [...html.matchAll(regex)];
-      let newHtml = html;
+      // Use DOM parsing instead of Regex to handle browser URL encoding (e.g., [[ -> %5B%5B)
+      const div = document.createElement('div');
+      div.innerHTML = html;
       
-      for (const m of matches) {
-          const placeholder = m[0];
-          const filename = m[1];
-          const base64 = await StorageService.loadMedia(filename);
-          if (base64) {
-              newHtml = newHtml.replace(placeholder, `src="${base64}" data-filename="${filename}"`);
+      const processElements = async (elements: NodeListOf<Element>) => {
+          for (const el of Array.from(elements)) {
+              const src = el.getAttribute('src');
+              if (!src) continue;
+
+              // Decode URI to handle %5B%5BFILE:...%5D%5D scenarios
+              const decodedSrc = decodeURIComponent(src);
+              
+              // Check if it matches our placeholder pattern
+              const match = decodedSrc.match(/\[\[FILE:([^\]]+)\]\]/);
+              
+              if (match) {
+                  const filename = match[1];
+                  const base64 = await StorageService.loadMedia(filename);
+                  if (base64) {
+                      el.setAttribute('src', base64);
+                      el.setAttribute('data-filename', filename);
+                  }
+              }
           }
-      }
-      return newHtml;
+      };
+
+      await processElements(div.querySelectorAll('img'));
+      await processElements(div.querySelectorAll('audio'));
+      
+      return div.innerHTML;
   }, []);
 
   // Helper: Compress real base64 to placeholders for storage
@@ -91,6 +111,11 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   useEffect(() => {
     const initContent = async () => {
+      // If the encrypted data changed because WE just saved it, don't re-init
+      if (note.encryptedData && note.encryptedData === lastSavedEncryptedDataRef.current) {
+         return;
+      }
+
       setIsLoadingContent(true);
       let loadedContent = note.content;
       let loadedTitle = note.title;
@@ -140,6 +165,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     let currentHtml = contentState;
     if (isEditing && contentRef.current) {
          currentHtml = contentRef.current.innerHTML;
+         setContentState(currentHtml);
     }
     
     // Create plain text preview
@@ -167,7 +193,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
         try {
             const payload = JSON.stringify({ title, content: compressedContent });
             const encrypted = await SecurityService.encrypt(payload, activeNoteKey);
-            updatedNote.encryptedData = JSON.stringify(encrypted);
+            const encryptedString = JSON.stringify(encrypted);
+            updatedNote.encryptedData = encryptedString;
+            lastSavedEncryptedDataRef.current = encryptedString;
+            
             updatedNote.content = ""; 
             updatedNote.plainTextPreview = "";
         } catch (e) {
@@ -183,20 +212,63 @@ export const EditorView: React.FC<EditorViewProps> = ({
     }
 
     onSave(updatedNote);
-    // Update local state to match (expanded) for continuity
-    // We don't need to do anything here because contentState still holds the expanded version
   }, [note, title, tags, color, folderId, location, onSave, isEditing, activeNoteKey, contentState]);
+
+  // Keep a ref to the latest handleSave to call it on unmount
+  const handleSaveRef = useRef(handleSave);
+  useEffect(() => {
+    handleSaveRef.current = handleSave;
+  }, [handleSave]);
+
+  // Handle Locking/Unlocking Logic
+  const handleLockAction = () => {
+      setShowSettings(false);
+      
+      if (note.isLocked) {
+          // UNLOCKING: We handle this internally because we possess the decrypted content.
+          // App.tsx doesn't have the decrypted content, so letting it handle unlock results in data loss.
+          
+          let currentHtml = contentState;
+          if (isEditing && contentRef.current) {
+               currentHtml = contentRef.current.innerHTML;
+               setContentState(currentHtml);
+          }
+          
+          const temp = document.createElement("div");
+          temp.innerHTML = currentHtml;
+          const plainText = temp.innerText;
+          const compressedContent = compressMedia(currentHtml);
+
+          const unlockedNote: Note = {
+              ...note,
+              title,
+              content: compressedContent,
+              plainTextPreview: plainText,
+              updatedAt: Date.now(),
+              isLocked: false,
+              encryptedData: undefined,
+              lockMode: undefined,
+              security: undefined,
+              tags,
+              color,
+              folderId: folderId || undefined,
+              location: location
+          };
+          
+          onSave(unlockedNote);
+      } else {
+          // LOCKING: We delegate this to App.tsx to show the selection modal.
+          // But first, save current changes to ensure the note is up to date before locking.
+          handleSave();
+          onLockToggle();
+      }
+  };
 
   // Auto-save logic
   useEffect(() => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     if (!isDecrypted || isLoadingContent) return;
 
-    // We check against refs or basic state change detection
-    // For content, since we don't update state on every keystroke, checking contentState might be stale if editing
-    // We rely on explicit save or back button mostly, but auto-save is nice.
-    // To support auto-save without state thrashing, we can check contentRef periodically
-    
     saveTimeoutRef.current = setTimeout(() => {
         handleSave();
     }, 2000); // 2 seconds debounce
@@ -205,6 +277,13 @@ export const EditorView: React.FC<EditorViewProps> = ({
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
   }, [title, tags, color, folderId, location, handleSave, isDecrypted, isLoadingContent]);
+
+  // Ensure save on unmount (e.g. back button)
+  useEffect(() => {
+    return () => {
+        handleSaveRef.current();
+    };
+  }, []);
 
 
   const handleAddTag = () => {
@@ -416,7 +495,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
             <div className={`absolute top-16 right-4 w-72 shadow-2xl rounded-xl border z-20 p-4 animate-slide-up ${styles.cardBase} ${styles.cardBorder}`}>
                 <h4 className={`text-xs font-semibold mb-3 ${styles.secondaryText}`}>NOTE SETTINGS</h4>
                 <button 
-                    onClick={() => { setShowSettings(false); handleSave(); onLockToggle(); }}
+                    onClick={handleLockAction}
                     className={`w-full flex items-center gap-2 mb-4 p-2 rounded-lg text-sm ${note.isLocked ? `${styles.dangerBg} ${styles.dangerText}` : `${styles.text} ${styles.iconHover}`}`}
                 >
                     <Icon name={note.isLocked ? "unlock" : "lock"} size={16} />
