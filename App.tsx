@@ -193,39 +193,41 @@ const NoteCard: React.FC<{
             : 'border-primary-400/80 dark:border-primary-600 shadow-md ring-1 ring-primary-400/20')
     : '';
 
-  const isEncrypted = !!note.encryptedData;
+  const isLocked = note.isLocked || !!note.encryptedData;
   const isCustomLock = note.lockMode === 'CUSTOM';
+  const isEncrypted = !!note.encryptedData;
 
   return (
     <div 
       onClick={onClick}
-      className={`${colorClass} ${styles.text} border rounded-2xl p-4 transition-all cursor-pointer relative overflow-hidden group mb-4 break-inside-avoid hover:shadow-lg ${pinnedStyle}`}
+      className={`${colorClass} ${styles.text} border rounded-2xl p-4 transition-all cursor-pointer relative overflow-hidden group mb-4 break-inside-avoid hover:shadow-lg ${pinnedStyle} ${isLocked ? 'ring-1 ring-inset ring-black/5 dark:ring-white/5' : ''}`}
     >
       <div className="flex justify-between items-start mb-2">
-        {isEncrypted ? (
-             <h3 className="font-semibold text-lg line-clamp-2 leading-tight flex-1 pr-6 mb-1 opacity-50 tracking-widest">
-                {isCustomLock ? "🔒 PRIVATE" : "••••••••••"}
-            </h3>
-        ) : (
-             note.title && (
-                <h3 className="font-semibold text-lg line-clamp-2 leading-tight flex-1 pr-6 mb-1">
-                {note.title}
-                </h3>
-            )
-        )}
+         {/* Show title always, use placeholder if locked and empty */}
+         <h3 className={`font-semibold text-lg line-clamp-2 leading-tight flex-1 pr-6 mb-1 ${(!note.title && isLocked) ? "italic opacity-50" : ""}`}>
+            {note.title || (isLocked ? "Locked Note" : "Untitled")}
+        </h3>
         
         {!isTrashView && note.isPinned && (
              <div className={`absolute top-0 right-0 p-2 rounded-bl-xl ${theme === 'vision' ? 'bg-[#2F6BFF] text-white' : 'bg-primary-500 text-white'}`}>
                  <Icon name="pinFilled" size={12} fill={true} />
              </div>
         )}
-        {note.isLocked && <Icon name={isCustomLock ? "shield" : "lock"} size={14} className={`${isCustomLock ? 'text-purple-500' : 'text-red-500'} absolute top-4 right-8`} />}
+        {note.isLocked && <Icon name={isCustomLock ? "shield" : "lock"} size={14} className={`${isCustomLock ? 'text-purple-500' : 'text-gray-400'} absolute top-4 right-8`} />}
       </div>
       
-      {note.isLocked || isEncrypted ? (
-        <div className="flex flex-col items-center justify-center py-4 opacity-50">
-           <Icon name={isCustomLock ? "shield" : "lock"} size={32} className="mb-2" />
-           <span className="text-xs">{isCustomLock ? "Custom PIN Locked" : "App Locked"}</span>
+      {isLocked ? (
+        <div className={`mt-2 h-24 rounded-xl flex flex-col items-center justify-center gap-2 border-2 border-dashed transition-colors ${
+             theme === 'neo-glass' 
+                ? 'bg-black/10 border-white/10' 
+                : (theme === 'vision' ? 'bg-[#0B132B] border-[#1F2C4D]' : 'bg-gray-50 dark:bg-black/20 border-gray-200 dark:border-gray-800')
+         }`}>
+           <div className={`p-2 rounded-full ${isCustomLock ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-500' : 'bg-gray-200 dark:bg-gray-800 text-gray-500'}`}>
+                <Icon name={isCustomLock ? "shield" : "lock"} size={20} />
+           </div>
+           <span className={`text-[10px] uppercase font-bold tracking-widest ${isCustomLock ? 'text-purple-500' : 'text-gray-500'}`}>
+                {isCustomLock ? "Private" : "Locked"}
+           </span>
         </div>
       ) : (
         <p className={`text-sm line-clamp-[8] mb-3 min-h-[1.5rem] whitespace-pre-wrap ${styles.secondaryText} ${!note.title ? 'text-base pt-1' : ''}`}>
@@ -234,7 +236,7 @@ const NoteCard: React.FC<{
       )}
 
       {/* Tags */}
-      {note.tags && note.tags.length > 0 && !note.isLocked && !isEncrypted && (
+      {note.tags && note.tags.length > 0 && !isEncrypted && (
           <div className="flex flex-wrap gap-1 mb-3">
               {note.tags.slice(0, 3).map(tag => (
                   <span key={tag} className={`text-[10px] uppercase font-bold tracking-wide px-2 py-0.5 rounded ${theme === 'neo-glass' ? 'bg-white/20 text-white' : (theme === 'vision' ? 'bg-[#141F3A] text-[#7F8FB0]' : 'bg-black/5 dark:bg-white/10 text-gray-500 dark:text-gray-400')}`}>
@@ -583,7 +585,8 @@ const NoteEditor: React.FC<{
             const encrypted = await SecurityService.encrypt(payload, encryptionKey);
             updatedNote.encryptedData = JSON.stringify(encrypted);
             // Clear visible content fields for security in storage
-            updatedNote.title = "";
+            // KEEP TITLE VISIBLE for UI
+            updatedNote.title = title;
             updatedNote.content = "";
             updatedNote.plainTextPreview = "";
         } catch (e) {
@@ -1084,13 +1087,26 @@ const SecuritySetupModal: React.FC<{ onComplete: (key: CryptoKey, security: Note
     const [step, setStep] = useState(1); // 1: Enter, 2: Confirm
     const [error, setError] = useState("");
     const [creating, setCreating] = useState(false);
+    
+    const PIN_LENGTH = 4; // Fixed length for better UX
 
     const handleNumClick = (num: string) => {
-        // Enforce max length of 8 just for sanity, though technically unlimited
+        // Enforce max length
+        if (creating) return;
+
         if (step === 1) {
-            if (pin.length < 8) setPin(pin + num);
+            if (pin.length < PIN_LENGTH) {
+                const newPin = pin + num;
+                setPin(newPin);
+                if (newPin.length === PIN_LENGTH) {
+                    setTimeout(() => setStep(2), 200);
+                }
+            }
         } else {
-             if (confirmPin.length < 8) setConfirmPin(confirmPin + num);
+             if (confirmPin.length < PIN_LENGTH) {
+                 setConfirmPin(confirmPin + num);
+                 // useEffect handles submit
+             }
         }
     }
 
@@ -1126,10 +1142,10 @@ const SecuritySetupModal: React.FC<{ onComplete: (key: CryptoKey, security: Note
 
     // Auto-submit when confirmation length matches original length
     useEffect(() => {
-        if (step === 2 && confirmPin.length === pin.length && pin.length >= 4) {
+        if (step === 2 && confirmPin.length === PIN_LENGTH && pin.length === PIN_LENGTH) {
             handleSubmit();
         }
-    }, [confirmPin, pin, step, handleSubmit]);
+    }, [confirmPin, pin, step, handleSubmit, PIN_LENGTH]);
 
     return (
         <div className="fixed inset-0 z-[100] flex flex-col pt-[env(safe-area-inset-top)] pb-[calc(2rem+env(safe-area-inset-bottom))] bg-gray-950/95 backdrop-blur-2xl text-white select-none min-h-[100dvh]">
@@ -1143,13 +1159,13 @@ const SecuritySetupModal: React.FC<{ onComplete: (key: CryptoKey, security: Note
                 {/* Dots */}
                 <div className={`flex gap-6 h-4 items-center justify-center mb-8 ${error ? "animate-[shake_0.5s_ease-in-out]" : ""}`}>
                     {/* Render dots based on current input length */}
-                    {Array.from({ length: Math.max(4, (step === 1 ? pin.length : confirmPin.length)) }).map((_, i) => (
+                    {Array.from({ length: PIN_LENGTH }).map((_, i) => (
                         <div key={i} className={`w-4 h-4 rounded-full border-2 transition-all duration-300 ${i < (step === 1 ? pin.length : confirmPin.length) ? "bg-white border-white scale-110" : "bg-transparent border-white/30"}`} />
                     ))}
                 </div>
 
                 <p className={`text-white/50 text-sm font-medium tracking-wide uppercase transition-all ${error ? "text-red-400" : ""}`}>
-                    {error || (step === 1 ? "Create PIN" : "Confirm PIN")}
+                    {error || (step === 1 ? "Create 4-digit PIN" : "Confirm PIN")}
                 </p>
             </div>
 
@@ -1172,15 +1188,6 @@ const SecuritySetupModal: React.FC<{ onComplete: (key: CryptoKey, security: Note
                     </button>
                 </div>
             </div>
-
-            {/* Next Button for Step 1 */}
-            {step === 1 && pin.length >= 4 && (
-                 <div className="absolute bottom-[calc(2.5rem+env(safe-area-inset-bottom))] right-8">
-                    <button onClick={() => setStep(2)} className="bg-blue-600 text-white rounded-full p-4 shadow-lg animate-slide-in">
-                        <Icon name="arrowLeft" size={24} className="rotate-180" />
-                    </button>
-                </div>
-            )}
         </div>
     );
 }
