@@ -264,6 +264,54 @@ export const EditorView: React.FC<EditorViewProps> = ({
       }
   };
 
+  // Keyboard Handling Logic
+  useEffect(() => {
+    const handleViewportResize = () => {
+        if (!isEditing) return;
+
+        // Small delay to allow Android keyboard to animate and layout to settle
+        setTimeout(() => {
+            const selection = window.getSelection();
+            if (!selection || selection.rangeCount === 0) return;
+
+            let node = selection.focusNode;
+            // Get the actual element if it's a text node
+            if (node?.nodeType === Node.TEXT_NODE) {
+                node = node.parentElement;
+            }
+
+            // Ensure the cursor is inside the editor content
+            if (node instanceof HTMLElement && contentRef.current?.contains(node)) {
+                // Check if the node is actually out of view (bottom covered by keyboard)
+                // visualViewport.height tells us the height of the visible area (screen - keyboard)
+                const rect = node.getBoundingClientRect();
+                const viewportHeight = window.visualViewport?.height || window.innerHeight;
+                
+                // If the element's bottom is below the viewport, scroll it up
+                if (rect.bottom > viewportHeight) {
+                    node.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            }
+        }, 150);
+    };
+
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', handleViewportResize);
+        window.visualViewport.addEventListener('scroll', handleViewportResize);
+    } else {
+        window.addEventListener('resize', handleViewportResize);
+    }
+
+    return () => {
+        if (window.visualViewport) {
+            window.visualViewport.removeEventListener('resize', handleViewportResize);
+            window.visualViewport.removeEventListener('scroll', handleViewportResize);
+        } else {
+            window.removeEventListener('resize', handleViewportResize);
+        }
+    };
+  }, [isEditing]);
+
   // Auto-save logic
   useEffect(() => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -556,7 +604,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
             </>
         )}
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-6" onClick={!isEditing ? (e) => e.detail === 3 && setIsEditing(true) : undefined}>
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-40" onClick={!isEditing ? (e) => e.detail === 3 && setIsEditing(true) : undefined}>
             {isEditing ? (
                 <>
                     <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className={`w-full text-2xl md:text-3xl font-bold bg-transparent border-none outline-none mb-4 ${styles.text} ${styles.searchBarPlaceholder}`} />
