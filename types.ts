@@ -1,4 +1,5 @@
 
+
 export interface EncryptedData {
   cipherText: string; // Base64
   iv: string; // Base64
@@ -9,6 +10,12 @@ export interface NoteSecurity {
   salt: string;
   verifier: string;
   pinLength?: number;
+}
+
+export interface NoteLocation {
+  lat: number;
+  lng: number;
+  address?: string; // Optional text representation
 }
 
 export interface Note {
@@ -28,6 +35,7 @@ export interface Note {
   folderId?: string;
   isTrashed?: boolean;
   deletedAt?: number;
+  location?: NoteLocation;
   
   // Security Features
   isLocked?: boolean; // Requires auth to open

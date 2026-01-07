@@ -1,5 +1,9 @@
 {
   "name": "CloudPad Android",
   "description": "A Material Design note-taking app with Google Drive synchronization, designed for Android.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
 }

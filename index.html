@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>CloudPad</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://apis.google.com/js/api.js" async defer></script>
@@ -44,6 +44,42 @@
       }
       .pt-safe {
         padding-top: env(safe-area-inset-top);
+      }
+
+      /* Hide the SQLite helper component */
+      jeep-sqlite {
+        display: none;
+      }
+
+      /* TipTap Editor Styles */
+      .ProseMirror {
+        outline: none;
+        min-height: 50vh;
+      }
+      .ProseMirror p.is-editor-empty:first-child::before {
+        color: #adb5bd;
+        content: attr(data-placeholder);
+        float: left;
+        height: 0;
+        pointer-events: none;
+      }
+      .ProseMirror ul {
+        list-style-type: disc;
+        padding-left: 1.5em;
+      }
+      .ProseMirror ol {
+        list-style-type: decimal;
+        padding-left: 1.5em;
+      }
+      .ProseMirror blockquote {
+        border-left: 3px solid #cbd5e1;
+        padding-left: 1rem;
+        font-style: italic;
+      }
+      .ProseMirror img {
+        border-radius: 0.75rem;
+        max-width: 100%;
+        height: auto;
       }
     </style>
     <script>
@@ -92,7 +128,14 @@
     "@capgo/capacitor-native-biometric": "https://esm.sh/@capgo/capacitor-native-biometric@6.0.0",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3"
+    "react": "https://esm.sh/react@^19.2.3",
+    "jeep-sqlite/": "https://esm.sh/jeep-sqlite@^2.8.0/",
+    "@capacitor-community/sqlite": "https://esm.sh/@capacitor-community/sqlite@^7.0.3",
+    "@tiptap/core": "https://esm.sh/@tiptap/core@2.10.3?bundle",
+    "@tiptap/react": "https://esm.sh/@tiptap/react@2.10.3?bundle&deps=react@19.2.3,react-dom@19.2.3,@tiptap/core@2.10.3",
+    "@tiptap/starter-kit": "https://esm.sh/@tiptap/starter-kit@2.10.3?bundle&deps=@tiptap/core@2.10.3",
+    "@tiptap/extension-image": "https://esm.sh/@tiptap/extension-image@2.10.3?bundle&deps=@tiptap/core@2.10.3",
+    "@tiptap/extension-placeholder": "https://esm.sh/@tiptap/extension-placeholder@2.10.3?bundle&deps=@tiptap/core@2.10.3"
   }
 }
 </script>

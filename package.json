@@ -14,7 +14,14 @@
     "@capacitor/app": "6.0.0",
     "@capgo/capacitor-native-biometric": "6.0.0",
     "react-dom": "^19.2.3",
-    "react": "^19.2.3"
+    "react": "^19.2.3",
+    "jeep-sqlite": "^2.8.0",
+    "@capacitor-community/sqlite": "^7.0.3",
+    "@tiptap/core": "2.10.3",
+    "@tiptap/react": "2.10.3",
+    "@tiptap/starter-kit": "2.10.3",
+    "@tiptap/extension-image": "2.10.3",
+    "@tiptap/extension-placeholder": "2.10.3"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
