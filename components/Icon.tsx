@@ -51,8 +51,7 @@ const paths: Record<string, string> = {
   micOff: "M1 1l22 22M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6",
   mapPin: "M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
   play: "M5 3l14 9-14 9V3z",
-  stop: "M6 4h12v16H6z",
-  clock: "M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zm0-2a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm-.5-8.5V7h1v4.25l3.5 2-.5.866-4-2.25z"
+  stop: "M6 4h12v16H6z"
 };
 
 interface IconProps {
