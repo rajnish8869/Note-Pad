@@ -4,20 +4,8 @@ import { Note, Theme, ViewState, UserProfile, Folder, EncryptedData, NoteSecurit
 import { DriveService } from './services/DriveService';
 import { SecurityService } from './services/SecurityService';
 
-// NOTE: In a real native build, install the plugin: npm install @capacitor-community/native-biometric
-// import { NativeBiometric } from '@capacitor-community/native-biometric';
-
-// Mock Biometric implementation for Web Preview
-const NativeBiometric = {
-  isAvailable: async (): Promise<{ isAvailable: boolean }> => {
-    // Simulate availability
-    return { isAvailable: true };
-  },
-  verifyIdentity: async (_options: any): Promise<void> => {
-    // Simulate a short delay for auth
-    return new Promise(resolve => setTimeout(resolve, 800));
-  }
-};
+import { App as CapacitorApp } from '@capacitor/app';
+import { NativeBiometric } from '@capgo/capacitor-native-biometric';
 
 // --- Theme Configurations ---
 
@@ -340,6 +328,157 @@ const NoteCard: React.FC<{
   );
 };
 
+const SettingsView: React.FC<{
+  onBack: () => void;
+  theme: Theme;
+  setTheme: (t: Theme) => void;
+  user: UserProfile | null;
+  onLogin: () => void;
+  onLogout: () => void;
+  isSyncing: boolean;
+  onSync: () => void;
+  isAppLocked: boolean;
+  toggleAppLock: (enabled: boolean) => void;
+  hasSecuritySetup: boolean;
+  onSetupSecurity: () => void;
+  isIncognito: boolean;
+  toggleIncognito: (enabled: boolean) => void;
+}> = ({
+  onBack, theme, setTheme, user, onLogin, onLogout, isSyncing, onSync,
+  isAppLocked, toggleAppLock, hasSecuritySetup, onSetupSecurity, isIncognito, toggleIncognito
+}) => {
+  const styles = THEME_STYLES[theme];
+  
+  return (
+    <div className={`fixed inset-0 z-50 flex flex-col ${styles.bg} animate-slide-in`}>
+      {/* Header */}
+      <div className={`flex items-center gap-4 p-4 pt-[calc(1rem+env(safe-area-inset-top))] ${styles.header}`}>
+        <button onClick={onBack} className={`p-2 rounded-full ${styles.iconHover} ${styles.text}`}>
+           <Icon name="arrowLeft" size={24} />
+        </button>
+        <h1 className={`text-xl font-bold ${styles.text}`}>Settings</h1>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+        
+        {/* Account Section */}
+        <section>
+          <h2 className={`text-xs font-bold uppercase tracking-wider mb-3 px-2 ${styles.secondaryText}`}>Account</h2>
+          <div className={`rounded-2xl p-4 border ${styles.cardBase} ${styles.cardBorder}`}>
+             <div className="flex items-center gap-4 mb-4">
+                <div className={`w-16 h-16 rounded-full flex items-center justify-center overflow-hidden ${theme === 'neo-glass' ? 'bg-white/20' : 'bg-gray-200 dark:bg-gray-700'}`}>
+                   {user?.imageUrl ? <img src={user.imageUrl} className="w-full h-full object-cover" /> : <Icon name="user" size={32} className={styles.secondaryText} />}
+                </div>
+                <div>
+                   <div className={`font-bold text-lg ${styles.text}`}>{user?.name || "Guest"}</div>
+                   <div className={`text-sm ${styles.secondaryText}`}>{user?.email || "Not signed in"}</div>
+                </div>
+             </div>
+             
+             {user ? (
+               <button onClick={onLogout} className="w-full py-3 rounded-xl border border-red-500/30 text-red-500 font-medium hover:bg-red-500/10 transition-colors">
+                  Sign Out
+               </button>
+             ) : (
+               <button onClick={onLogin} className={`w-full py-3 rounded-xl font-medium ${theme === 'vision' ? 'bg-[#2F6BFF] text-white' : 'bg-primary-500 text-white'}`}>
+                  Sign In with Google
+               </button>
+             )}
+          </div>
+        </section>
+
+        {/* Appearance Section */}
+        <section>
+          <h2 className={`text-xs font-bold uppercase tracking-wider mb-3 px-2 ${styles.secondaryText}`}>Appearance</h2>
+          <div className={`rounded-2xl p-4 border ${styles.cardBase} ${styles.cardBorder}`}>
+             <div className="grid grid-cols-2 gap-3">
+                 {(['classic', 'dark', 'neo-glass', 'vision'] as Theme[]).map(t => (
+                     <button 
+                        key={t}
+                        onClick={() => setTheme(t)}
+                        className={`p-3 rounded-xl border text-left transition-all flex flex-col gap-2 ${theme === t ? (theme === 'vision' ? 'border-[#2F6BFF] bg-[#2F6BFF]/10' : 'border-primary-500 bg-primary-50 dark:bg-primary-900/20') : 'border-transparent hover:bg-black/5 dark:hover:bg-white/5'}`}
+                     >
+                        <div className={`w-full h-12 rounded-lg mb-1 border shadow-sm ${t === 'classic' ? 'bg-gray-50' : (t === 'dark' ? 'bg-[#121212]' : (t === 'neo-glass' ? 'bg-gradient-to-br from-indigo-500 to-pink-500' : 'bg-[#0B132B]'))}`}></div>
+                        <span className={`text-sm font-medium ${styles.text}`}>
+                          {t.charAt(0).toUpperCase() + t.slice(1).replace('-', ' ')}
+                        </span>
+                     </button>
+                 ))}
+             </div>
+          </div>
+        </section>
+
+        {/* Security Section */}
+        <section>
+          <h2 className={`text-xs font-bold uppercase tracking-wider mb-3 px-2 ${styles.secondaryText}`}>Security & Privacy</h2>
+          <div className={`rounded-2xl overflow-hidden border ${styles.cardBase} ${styles.cardBorder}`}>
+             
+             {/* App Lock Toggle */}
+             <div onClick={hasSecuritySetup ? () => toggleAppLock(!isAppLocked) : onSetupSecurity} className={`p-4 flex items-center justify-between cursor-pointer border-b ${theme === 'neo-glass' ? 'border-white/10' : (theme === 'vision' ? 'border-[#1F2C4D]' : 'border-gray-100 dark:border-gray-800')}`}>
+                <div className="flex items-center gap-3">
+                   <div className={`p-2 rounded-lg ${theme === 'vision' ? 'bg-[#2F6BFF]/20 text-[#2F6BFF]' : 'bg-blue-500/10 text-blue-500'}`}>
+                      <Icon name="lock" size={20} />
+                   </div>
+                   <div>
+                      <div className={`font-medium ${styles.text}`}>App Lock</div>
+                      <div className={`text-xs ${styles.secondaryText}`}>Require PIN to open app</div>
+                   </div>
+                </div>
+                <div className={`w-12 h-6 rounded-full relative transition-colors ${isAppLocked ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-sm ${isAppLocked ? 'left-7' : 'left-1'}`} />
+                </div>
+             </div>
+
+             {/* Incognito Toggle */}
+             <div onClick={() => toggleIncognito(!isIncognito)} className={`p-4 flex items-center justify-between cursor-pointer`}>
+                <div className="flex items-center gap-3">
+                   <div className={`p-2 rounded-lg bg-purple-500/10 text-purple-500`}>
+                      <Icon name="incognito" size={20} />
+                   </div>
+                   <div>
+                      <div className={`font-medium ${styles.text}`}>Incognito Mode</div>
+                      <div className={`text-xs ${styles.secondaryText}`}>Don't save notes to storage</div>
+                   </div>
+                </div>
+                <div className={`w-12 h-6 rounded-full relative transition-colors ${isIncognito ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-sm ${isIncognito ? 'left-7' : 'left-1'}`} />
+                </div>
+             </div>
+          </div>
+        </section>
+
+        {/* Data Section */}
+        <section>
+          <h2 className={`text-xs font-bold uppercase tracking-wider mb-3 px-2 ${styles.secondaryText}`}>Data & Sync</h2>
+          <div className={`rounded-2xl p-4 border ${styles.cardBase} ${styles.cardBorder}`}>
+              <button 
+                onClick={onSync}
+                disabled={isSyncing || isIncognito}
+                className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors ${isIncognito ? 'opacity-50' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+              >
+                 <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${theme === 'vision' ? 'bg-[#2F6BFF]/20 text-[#2F6BFF]' : 'bg-green-500/10 text-green-500'}`}>
+                        <Icon name={isSyncing ? "refresh" : "cloud"} size={20} className={isSyncing ? "animate-spin" : ""} />
+                    </div>
+                    <div className="text-left">
+                       <div className={`font-medium ${styles.text}`}>Sync with Google Drive</div>
+                       <div className={`text-xs ${styles.secondaryText}`}>{isSyncing ? "Syncing..." : "Tap to sync now"}</div>
+                    </div>
+                 </div>
+                 {!isSyncing && <Icon name="check" size={16} className="text-green-500 opacity-0" />} 
+              </button>
+          </div>
+        </section>
+
+        <div className={`text-center text-xs py-4 ${styles.secondaryText}`}>
+           CloudPad v1.0.0
+        </div>
+
+      </div>
+    </div>
+  );
+};
+
 const Drawer: React.FC<{ 
   isOpen: boolean; 
   onClose: () => void; 
@@ -425,39 +564,6 @@ const Drawer: React.FC<{
           
           <div className={`h-px my-2 ${theme === 'neo-glass' ? 'bg-white/10' : (theme === 'vision' ? 'bg-[#1F2C4D]' : 'bg-gray-100 dark:bg-gray-800')}`} />
           
-          {/* Security Section */}
-          <div className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider ${styles.secondaryText}`}>Security & Privacy</div>
-          
-          <button 
-             onClick={hasSecuritySetup ? () => toggleAppLock(!isAppLocked) : onSetupSecurity}
-             className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors ${styles.text} ${styles.iconHover}`}
-          >
-             <div className="flex items-center gap-3">
-                 <Icon name={isAppLocked ? "lock" : "unlock"} size={20} />
-                 <span>{hasSecuritySetup ? "App Lock" : "Setup Secure PIN"}</span>
-             </div>
-             {hasSecuritySetup && (
-                <div className={`w-10 h-5 rounded-full relative transition-colors ${isAppLocked ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
-                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isAppLocked ? 'left-6' : 'left-1'}`} />
-                </div>
-             )}
-          </button>
-
-          <button 
-             onClick={() => toggleIncognito(!isIncognito)}
-             className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors ${styles.text} ${styles.iconHover} ${isIncognito ? 'bg-purple-500/10' : ''}`}
-          >
-             <div className="flex items-center gap-3">
-                 <Icon name="incognito" size={20} className={isIncognito ? 'text-purple-500' : ''}/>
-                 <span className={isIncognito ? 'text-purple-500 font-bold' : ''}>Incognito Mode</span>
-             </div>
-             <div className={`w-10 h-5 rounded-full relative transition-colors ${isIncognito ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
-                 <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isIncognito ? 'left-6' : 'left-1'}`} />
-             </div>
-          </button>
-
-          <div className={`h-px my-2 ${theme === 'neo-glass' ? 'bg-white/10' : (theme === 'vision' ? 'bg-[#1F2C4D]' : 'bg-gray-100 dark:bg-gray-800')}`} />
-          
           {/* Folders Section */}
           <div className={`flex justify-between items-center px-3 py-2 text-xs font-semibold uppercase tracking-wider ${styles.secondaryText}`}>
              <span>Folders</span>
@@ -497,50 +603,15 @@ const Drawer: React.FC<{
 
           <div className={`h-px my-2 ${theme === 'neo-glass' ? 'bg-white/10' : (theme === 'vision' ? 'bg-[#1F2C4D]' : 'bg-gray-100 dark:bg-gray-800')}`} />
 
-          {/* Theme Selection */}
-          <div className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider ${styles.secondaryText}`}>
-             <span>Theme</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2 px-2 mb-2">
-             {(['classic', 'dark', 'neo-glass', 'vision'] as Theme[]).map(t => (
-                 <button 
-                    key={t}
-                    onClick={() => setTheme(t)}
-                    className={`text-xs p-2 rounded-lg border text-center transition-all ${theme === t ? (t === 'vision' ? 'border-[#2F6BFF] ring-1 ring-[#2F6BFF] font-bold' : 'border-primary-500 ring-1 ring-primary-500 font-bold') : 'border-transparent opacity-70 hover:opacity-100'} ${styles.text} ${theme === 'neo-glass' ? 'bg-white/10' : (theme === 'vision' ? 'bg-[#141F3A]' : 'bg-black/5 dark:bg-white/5')}`}
-                 >
-                     {t.charAt(0).toUpperCase() + t.slice(1).replace('-', ' ')}
-                 </button>
-             ))}
-          </div>
-
-          <div className={`h-px my-4 ${theme === 'neo-glass' ? 'bg-white/10' : (theme === 'vision' ? 'bg-[#1F2C4D]' : 'bg-gray-100 dark:bg-gray-800')}`} />
-
+          {/* Settings Link */}
           <button 
-            onClick={onSync}
-            disabled={isSyncing || isIncognito}
-            className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors ${styles.text} ${isIncognito ? 'opacity-50 cursor-not-allowed' : styles.iconHover}`}
+            onClick={() => onChangeView('SETTINGS')}
+            className={menuButtonClass(currentView === 'SETTINGS')}
           >
-            <Icon name={isSyncing ? "refresh" : "cloud"} size={20} className={isSyncing ? "animate-spin" : ""} />
-            <span>{isIncognito ? "Sync Disabled" : (isSyncing ? "Syncing..." : "Sync Now")}</span>
+            <Icon name="settings" size={20} />
+            <span>Settings</span>
           </button>
           
-           {user ? (
-            <button 
-              onClick={onLogout}
-              className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors mt-2 text-red-500 ${styles.iconHover}`}
-            >
-              <Icon name="share" size={20} className="rotate-180" /> 
-              <span>Sign Out</span>
-            </button>
-          ) : (
-            <button 
-              onClick={onLogin}
-              className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors mt-2 ${theme === 'neo-glass' ? 'bg-white/20 text-white' : (theme === 'vision' ? 'bg-[#141F3A] text-[#2F6BFF]' : 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400')}`}
-            >
-              <Icon name="user" size={20} />
-              <span>Sign In with Google</span>
-            </button>
-          )}
         </div>
       </div>
     </>
@@ -978,7 +1049,7 @@ const NoteEditor: React.FC<{
 
 // AuthModal supports both Global verification (localStorage) and Custom verification (passed params)
 const AuthModal: React.FC<{ 
-    onUnlock: (key: CryptoKey) => void; 
+    onUnlock: (key: CryptoKey, rawPin?: string) => void; 
     onCancel?: () => void; 
     customSecurity?: NoteSecurity;
     theme: Theme;
@@ -986,8 +1057,10 @@ const AuthModal: React.FC<{
     const [pin, setPin] = useState("");
     const [error, setError] = useState(false);
     const [verifying, setVerifying] = useState(false);
+    const [bioAvailable, setBioAvailable] = useState(false);
 
     const s = SECURITY_THEME[theme];
+    const GLOBAL_PIN_ALIAS = "global_pin";
 
     // Determine target length for auto-submit
     const targetLength = useMemo(() => {
@@ -997,18 +1070,41 @@ const AuthModal: React.FC<{
         return 0; // Unknown
     }, [customSecurity]);
 
+    // Check availability
     useEffect(() => {
-        // Try biometrics immediately if available and we are using global security
         if (!customSecurity) {
-            const tryBio = async () => {
-                const result = await NativeBiometric.isAvailable();
+            NativeBiometric.isAvailable().then(result => {
+                setBioAvailable(result.isAvailable);
+                // Auto trigger if available and using Global lock
                 if (result.isAvailable) {
-                    // In a real app, call verifyIdentity and unlock
+                   performBiometricAuth();
                 }
-            };
-            tryBio();
+            }).catch(() => setBioAvailable(false));
         }
     }, [customSecurity]);
+
+    const performBiometricAuth = async () => {
+        try {
+            await NativeBiometric.verifyIdentity({
+                reason: "Unlock CloudPad",
+                title: "Authentication Required",
+                subtitle: "Use fingerprint or Face ID",
+                description: "Confirm identity to access secured notes"
+            });
+            // On success, retrieve the PIN
+            const creds = await NativeBiometric.getCredentials({
+                server: "com.cloudpad.app",
+            });
+            
+            // Check if we retrieved the right alias
+            if (creds && creds.username === GLOBAL_PIN_ALIAS && creds.password) {
+                 handleVerify(creds.password);
+            } 
+        } catch (e) {
+            console.log("Biometric Auth skipped or failed", e);
+            // Fallback to manual entry silently
+        }
+    };
 
     const handleVerify = useCallback(async (code: string) => {
         setVerifying(true);
@@ -1026,7 +1122,7 @@ const AuthModal: React.FC<{
         if (storedSalt && storedVerifier) {
             const key = await SecurityService.verifyPassword(code, storedSalt, storedVerifier);
             if (key) {
-                onUnlock(key);
+                onUnlock(key, code); // Pass code back to allow saving it to keychain if needed
             } else {
                 setError(true);
                 setPin("");
@@ -1060,8 +1156,18 @@ const AuthModal: React.FC<{
         
         {/* Header / Display */}
         <div className="flex-1 flex flex-col items-center justify-center">
-            <div className={`mb-6 transition-all ${error ? "animate-[shake_0.5s_ease-in-out]" : ""} ${s.icon}`}>
-                <Icon name="lock" size={48} />
+            <div 
+                className={`mb-6 transition-all cursor-pointer ${error ? "animate-[shake_0.5s_ease-in-out]" : ""} ${s.icon}`}
+                onClick={() => bioAvailable && !customSecurity && performBiometricAuth()}
+            >
+                {bioAvailable && !customSecurity ? (
+                     <div className="flex flex-col items-center gap-2">
+                        <Icon name="fingerprint" size={56} />
+                        <span className="text-xs opacity-50">Tap for Biometrics</span>
+                     </div>
+                ) : (
+                    <Icon name="lock" size={48} />
+                )}
             </div>
             
             {/* PIN Indicators */}
@@ -1136,7 +1242,7 @@ const AuthModal: React.FC<{
 )};
 
 const SecuritySetupModal: React.FC<{ 
-    onComplete: (key: CryptoKey, security: NoteSecurity) => void; 
+    onComplete: (key: CryptoKey, security: NoteSecurity, rawPin: string) => void; 
     onCancel: () => void;
     theme: Theme;
 }> = ({ onComplete, onCancel, theme }) => {
@@ -1192,7 +1298,7 @@ const SecuritySetupModal: React.FC<{
         // Derive key for immediate use
         const key = await SecurityService.verifyPassword(pin, salt, verifier);
         if (key) {
-            onComplete(key, { salt, verifier, pinLength: pin.length });
+            onComplete(key, { salt, verifier, pinLength: pin.length }, pin);
         } else {
             setError("Error creating key");
         }
@@ -1359,6 +1465,25 @@ export default function App() {
   
   const [showLockMethodModal, setShowLockMethodModal] = useState(false);
   const [showCustomLockSetup, setShowCustomLockSetup] = useState(false);
+
+  // --- App Lifecycle Handling for Security ---
+  useEffect(() => {
+    CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+        // If app goes to background (inactive) and App Lock is enabled, lock it.
+        // Also clear session keys from memory to force re-auth.
+        if (!isActive && isAppLockEnabled) {
+            setIsAppLocked(true);
+            setSessionKey(null);
+            setActiveNoteKey(null);
+            // Close any open editors to safe list view
+            if (view === 'EDITOR') {
+                 // Optional: Save before close if needed, but 'EDITOR' view relies on key. 
+                 // It will simply require re-auth when returning to 'EDITOR' if logic handles it, 
+                 // but usually safe to drop to list behind lock screen.
+            }
+        }
+    });
+  }, [isAppLockEnabled, view]);
 
   useEffect(() => {
     // Load Security Prefs
@@ -1562,7 +1687,7 @@ export default function App() {
       setShowLockMethodModal(false);
   };
 
-  const handleSetCustomLock = (key: CryptoKey, security: NoteSecurity) => {
+  const handleSetCustomLock = (key: CryptoKey, security: NoteSecurity, rawPin: string) => {
       const note = activeNotes.find(n => n.id === selectedNoteId);
       if (note) {
           handleUpdateNote({ ...note, isLocked: true, lockMode: 'CUSTOM', security: security });
@@ -1612,7 +1737,6 @@ export default function App() {
             email: 'Signed In',
             imageUrl: ''
         });
-        setIsDrawerOpen(false);
         handleSync();
     } catch (e) {
         console.error("Login failed", e);
@@ -1623,7 +1747,6 @@ export default function App() {
   const handleLogout = async () => {
     await driveService.signOut();
     setUser(null);
-    setIsDrawerOpen(false);
   };
 
   const handleSync = async () => {
@@ -1653,7 +1776,32 @@ export default function App() {
       localStorage.setItem('security_app_lock', enabled ? 'true' : 'false');
   };
 
-  const handleAuthSuccess = (key: CryptoKey) => {
+  const saveBiometricCredentials = useCallback(async (pin: string) => {
+    try {
+        // First check if biometrics are actually supported/enabled on this device
+        // This prevents calling setCredentials on Web or unsupported devices where it throws "Not Implemented"
+        const result = await NativeBiometric.isAvailable().catch(() => ({ isAvailable: false }));
+        
+        if (result.isAvailable) {
+            await NativeBiometric.setCredentials({
+                username: "global_pin",
+                password: pin,
+                server: "com.cloudpad.app"
+            });
+        }
+    } catch (err) {
+        // Suppress errors, as this is an enhancement feature, not critical path
+        console.debug("Biometric credential storage skipped:", err);
+    }
+  }, []);
+
+  const handleAuthSuccess = (key: CryptoKey, rawPin?: string) => {
+      // If we authenticated manually (rawPin exists) and we don't have biometrics stored yet (or just to keep it fresh),
+      // update the biometric credentials for Global Auth.
+      if (rawPin && (!pendingAuthNote || pendingAuthNote.lockMode !== 'CUSTOM')) {
+          saveBiometricCredentials(rawPin);
+      }
+
       if (isAppLocked) {
           setSessionKey(key);
           setIsAppLocked(false);
@@ -1674,7 +1822,7 @@ export default function App() {
       setShowAuthModal(false);
   };
 
-  const handleGlobalSetupComplete = (key: CryptoKey, security: NoteSecurity) => {
+  const handleGlobalSetupComplete = (key: CryptoKey, security: NoteSecurity, rawPin: string) => {
       setHasSecuritySetup(true);
       setSessionKey(key);
       localStorage.setItem('sec_salt', security.salt);
@@ -1683,6 +1831,10 @@ export default function App() {
       if (security.pinLength) {
         localStorage.setItem('sec_pin_length', security.pinLength.toString());
       }
+
+      // Save for Biometric Future Use
+      saveBiometricCredentials(rawPin);
+
       setShowSecuritySetup(false);
   }
 
@@ -1781,6 +1933,27 @@ export default function App() {
             />
         );
     }
+  }
+
+  if (view === 'SETTINGS') {
+      return (
+          <SettingsView
+             onBack={() => setView('LIST')}
+             theme={theme}
+             setTheme={handleThemeChange}
+             user={user}
+             onLogin={handleLogin}
+             onLogout={handleLogout}
+             isSyncing={isSyncing}
+             onSync={handleSync}
+             isAppLocked={isAppLockEnabled}
+             toggleAppLock={toggleAppLockSetting}
+             hasSecuritySetup={hasSecuritySetup}
+             onSetupSecurity={() => setShowSecuritySetup(true)}
+             isIncognito={isIncognito}
+             toggleIncognito={setIsIncognito}
+          />
+      );
   }
 
   // Get view title
