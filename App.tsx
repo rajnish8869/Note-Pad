@@ -94,6 +94,58 @@ const THEME_STYLES: Record<Theme, {
   }
 };
 
+const SECURITY_THEME: Record<Theme, {
+    container: string;
+    text: string;
+    subText: string;
+    keypad: string;
+    keypadAction: string;
+    dotActive: string;
+    dotInactive: string;
+    icon: string;
+}> = {
+  classic: {
+    container: "bg-gray-50",
+    text: "text-gray-900",
+    subText: "text-gray-500",
+    keypad: "bg-white shadow-sm border border-gray-200 text-gray-900 active:bg-gray-100",
+    keypadAction: "text-gray-900 hover:bg-gray-100",
+    dotActive: "bg-gray-900 border-gray-900 scale-110",
+    dotInactive: "border-gray-300 bg-transparent",
+    icon: "text-gray-900"
+  },
+  dark: {
+    container: "bg-gray-950",
+    text: "text-white",
+    subText: "text-gray-400",
+    keypad: "bg-white/5 text-white active:bg-white/20",
+    keypadAction: "text-white/60 hover:bg-white/10",
+    dotActive: "bg-white border-white scale-110",
+    dotInactive: "border-white/30 bg-transparent",
+    icon: "text-white/90"
+  },
+  'neo-glass': {
+    container: "bg-gradient-to-br from-indigo-900/95 via-purple-900/95 to-pink-900/95 backdrop-blur-3xl",
+    text: "text-white",
+    subText: "text-white/70",
+    keypad: "bg-white/10 border border-white/20 text-white backdrop-blur-md active:bg-white/20 shadow-lg",
+    keypadAction: "text-white/80 hover:bg-white/10",
+    dotActive: "bg-white border-white shadow-[0_0_15px_rgba(255,255,255,0.6)] scale-110",
+    dotInactive: "border-white/30 bg-transparent",
+    icon: "text-white"
+  },
+  vision: {
+    container: "bg-[#0B132B]",
+    text: "text-[#E6ECF5]",
+    subText: "text-[#7F8FB0]",
+    keypad: "bg-[#141F3A] border border-[#1F2C4D] text-[#2F6BFF] active:bg-[#24345C] shadow-lg shadow-[#0B132B]/50",
+    keypadAction: "text-[#7F8FB0] hover:bg-[#141F3A]",
+    dotActive: "bg-[#2F6BFF] border-[#2F6BFF] shadow-[0_0_10px_rgba(47,107,255,0.5)] scale-110",
+    dotInactive: "border-[#1F2C4D] bg-transparent",
+    icon: "text-[#2F6BFF]"
+  }
+};
+
 const NOTE_COLORS: Record<string, Record<Theme, string>> = {
   default: {
     classic: 'bg-white border-gray-200',
@@ -221,7 +273,7 @@ const NoteCard: React.FC<{
                 ? 'bg-black/10 border-white/10' 
                 : (theme === 'vision' ? 'bg-[#0B132B] border-[#1F2C4D]' : 'bg-gray-50 dark:bg-black/20 border-gray-200 dark:border-gray-800')
          }`}>
-           <div className={`p-2 rounded-full ${isCustomLock ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-500' : 'bg-gray-200 dark:bg-gray-800 text-gray-500'}`}>
+           <div className={`p-2 rounded-full ${isCustomLock ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-500' : (theme === 'vision' ? 'bg-[#141F3A] text-[#2F6BFF]' : (theme === 'neo-glass' ? 'bg-white/20 text-white' : 'bg-gray-200 dark:bg-gray-800 text-gray-500'))}`}>
                 <Icon name="lock" size={20} />
            </div>
            <span className={`text-[10px] uppercase font-bold tracking-widest ${isCustomLock ? 'text-purple-500' : 'text-gray-500'}`}>
@@ -928,11 +980,14 @@ const NoteEditor: React.FC<{
 const AuthModal: React.FC<{ 
     onUnlock: (key: CryptoKey) => void; 
     onCancel?: () => void; 
-    customSecurity?: NoteSecurity 
-}> = ({ onUnlock, onCancel, customSecurity }) => {
+    customSecurity?: NoteSecurity;
+    theme: Theme;
+}> = ({ onUnlock, onCancel, customSecurity, theme }) => {
     const [pin, setPin] = useState("");
     const [error, setError] = useState(false);
     const [verifying, setVerifying] = useState(false);
+
+    const s = SECURITY_THEME[theme];
 
     // Determine target length for auto-submit
     const targetLength = useMemo(() => {
@@ -1001,12 +1056,12 @@ const AuthModal: React.FC<{
     }
 
     return (
-    <div className="fixed inset-0 z-[100] flex flex-col pt-[env(safe-area-inset-top)] pb-[calc(2rem+env(safe-area-inset-bottom))] bg-gray-950/95 backdrop-blur-2xl text-white select-none min-h-[100dvh]">
+    <div className={`fixed inset-0 z-[100] flex flex-col pt-[env(safe-area-inset-top)] pb-[calc(2rem+env(safe-area-inset-bottom))] select-none min-h-[100dvh] ${s.container}`}>
         
         {/* Header / Display */}
         <div className="flex-1 flex flex-col items-center justify-center">
-            <div className={`mb-6 transition-all ${error ? "animate-[shake_0.5s_ease-in-out]" : ""}`}>
-                <Icon name="lock" size={48} className="text-white/90" />
+            <div className={`mb-6 transition-all ${error ? "animate-[shake_0.5s_ease-in-out]" : ""} ${s.icon}`}>
+                <Icon name="lock" size={48} />
             </div>
             
             {/* PIN Indicators */}
@@ -1016,7 +1071,7 @@ const AuthModal: React.FC<{
                     Array.from({ length: targetLength }).map((_, i) => (
                         <div 
                             key={i} 
-                            className={`w-4 h-4 rounded-full border-2 transition-all duration-300 ${i < pin.length ? "bg-white border-white scale-110" : "bg-transparent border-white/30 scale-100"}`} 
+                            className={`w-4 h-4 rounded-full border-2 transition-all duration-300 ${i < pin.length ? s.dotActive : s.dotInactive}`} 
                         />
                     ))
                 ) : (
@@ -1024,13 +1079,13 @@ const AuthModal: React.FC<{
                     Array.from({ length: Math.max(4, pin.length) }).map((_, i) => (
                         <div 
                             key={i} 
-                            className={`w-4 h-4 rounded-full border-2 transition-all duration-300 ${i < pin.length ? "bg-white border-white scale-110" : "bg-transparent border-white/30"}`} 
+                            className={`w-4 h-4 rounded-full border-2 transition-all duration-300 ${i < pin.length ? s.dotActive : s.dotInactive}`} 
                         />
                     ))
                 )}
             </div>
             
-            <p className="text-white/50 text-sm font-medium tracking-wide uppercase">{customSecurity ? "Private Note" : "Enter PIN"}</p>
+            <p className={`text-sm font-medium tracking-wide uppercase ${s.subText}`}>{customSecurity ? "Private Note" : "Enter PIN"}</p>
         </div>
 
         {/* Keypad */}
@@ -1040,7 +1095,7 @@ const AuthModal: React.FC<{
                     <button 
                         key={n} 
                         onClick={() => handleNumClick(n.toString())} 
-                        className="w-20 h-20 mx-auto rounded-full bg-white/5 active:bg-white/20 text-3xl font-light flex items-center justify-center transition-all active:scale-95 outline-none select-none"
+                        className={`w-20 h-20 mx-auto rounded-full text-3xl font-light flex items-center justify-center transition-all active:scale-95 outline-none select-none ${s.keypad}`}
                     >
                         {n}
                     </button>
@@ -1049,7 +1104,7 @@ const AuthModal: React.FC<{
                 {/* Bottom Row */}
                 <div className="w-20 h-20 mx-auto flex items-center justify-center">
                    {onCancel && (
-                        <button onClick={onCancel} className="text-white/50 text-xs font-bold tracking-widest uppercase hover:text-white transition-colors py-4">
+                        <button onClick={onCancel} className={`text-xs font-bold tracking-widest uppercase transition-colors py-4 ${s.keypadAction}`}>
                             Cancel
                         </button>
                     )}
@@ -1057,14 +1112,14 @@ const AuthModal: React.FC<{
                 
                 <button 
                     onClick={() => handleNumClick("0")} 
-                    className="w-20 h-20 mx-auto rounded-full bg-white/5 active:bg-white/20 text-3xl font-light flex items-center justify-center transition-all active:scale-95 outline-none select-none"
+                    className={`w-20 h-20 mx-auto rounded-full text-3xl font-light flex items-center justify-center transition-all active:scale-95 outline-none select-none ${s.keypad}`}
                 >
                     0
                 </button>
                 
                 <button 
                     onClick={handleBackspace} 
-                    className="w-20 h-20 mx-auto rounded-full hover:bg-white/5 active:scale-90 flex items-center justify-center text-white/60 transition-all outline-none"
+                    className={`w-20 h-20 mx-auto rounded-full active:scale-90 flex items-center justify-center transition-all outline-none ${s.keypadAction}`}
                 >
                     <Icon name="arrowLeft" size={28} />
                 </button>
@@ -1074,19 +1129,24 @@ const AuthModal: React.FC<{
         {/* Footer Actions / Unlock Button if length unknown */}
         {targetLength === 0 && !onCancel && (
              <div className="absolute bottom-[calc(2rem+env(safe-area-inset-bottom))] left-8">
-                 <button onClick={() => handleVerify(pin)} className="text-blue-400 font-medium">Unlock</button>
+                 <button onClick={() => handleVerify(pin)} className="text-blue-500 font-medium">Unlock</button>
              </div>
         )}
     </div>
 )};
 
-const SecuritySetupModal: React.FC<{ onComplete: (key: CryptoKey, security: NoteSecurity) => void; onCancel: () => void }> = ({ onComplete, onCancel }) => {
+const SecuritySetupModal: React.FC<{ 
+    onComplete: (key: CryptoKey, security: NoteSecurity) => void; 
+    onCancel: () => void;
+    theme: Theme;
+}> = ({ onComplete, onCancel, theme }) => {
     const [pin, setPin] = useState("");
     const [confirmPin, setConfirmPin] = useState("");
     const [step, setStep] = useState(1); // 1: Enter, 2: Confirm
     const [error, setError] = useState("");
     const [creating, setCreating] = useState(false);
     
+    const s = SECURITY_THEME[theme];
     const PIN_LENGTH = 4; // Fixed length for better UX
 
     const handleNumClick = (num: string) => {
@@ -1147,23 +1207,23 @@ const SecuritySetupModal: React.FC<{ onComplete: (key: CryptoKey, security: Note
     }, [confirmPin, pin, step, handleSubmit, PIN_LENGTH]);
 
     return (
-        <div className="fixed inset-0 z-[100] flex flex-col pt-[env(safe-area-inset-top)] pb-[calc(2rem+env(safe-area-inset-bottom))] bg-gray-950/95 backdrop-blur-2xl text-white select-none min-h-[100dvh]">
+        <div className={`fixed inset-0 z-[100] flex flex-col pt-[env(safe-area-inset-top)] pb-[calc(2rem+env(safe-area-inset-bottom))] select-none min-h-[100dvh] ${s.container}`}>
              
              {/* Header */}
              <div className="flex-1 flex flex-col items-center justify-center">
-                <div className={`mb-6 transition-all ${step === 2 ? 'scale-110' : ''}`}>
-                     <Icon name={step === 1 ? "lock" : "check"} size={48} className={step === 1 ? "text-white/90" : "text-green-400"} />
+                <div className={`mb-6 transition-all ${step === 2 ? 'scale-110' : ''} ${step === 1 ? s.icon : "text-green-500"}`}>
+                     <Icon name={step === 1 ? "lock" : "check"} size={48} />
                 </div>
                 
                 {/* Dots */}
                 <div className={`flex gap-6 h-4 items-center justify-center mb-8 ${error ? "animate-[shake_0.5s_ease-in-out]" : ""}`}>
                     {/* Render dots based on current input length */}
                     {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-                        <div key={i} className={`w-4 h-4 rounded-full border-2 transition-all duration-300 ${i < (step === 1 ? pin.length : confirmPin.length) ? "bg-white border-white scale-110" : "bg-transparent border-white/30"}`} />
+                        <div key={i} className={`w-4 h-4 rounded-full border-2 transition-all duration-300 ${i < (step === 1 ? pin.length : confirmPin.length) ? s.dotActive : s.dotInactive}`} />
                     ))}
                 </div>
 
-                <p className={`text-white/50 text-sm font-medium tracking-wide uppercase transition-all ${error ? "text-red-400" : ""}`}>
+                <p className={`text-sm font-medium tracking-wide uppercase transition-all ${error ? "text-red-500" : s.subText}`}>
                     {error || (step === 1 ? "Create 4-digit PIN" : "Confirm PIN")}
                 </p>
             </div>
@@ -1172,17 +1232,17 @@ const SecuritySetupModal: React.FC<{ onComplete: (key: CryptoKey, security: Note
             <div className="px-8 pb-4 w-full max-w-sm mx-auto">
                 <div className="grid grid-cols-3 gap-x-8 gap-y-6">
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
-                        <button key={n} onClick={() => handleNumClick(n.toString())} className="w-20 h-20 mx-auto rounded-full bg-white/5 active:bg-white/20 text-3xl font-light flex items-center justify-center transition-all active:scale-95 outline-none">
+                        <button key={n} onClick={() => handleNumClick(n.toString())} className={`w-20 h-20 mx-auto rounded-full text-3xl font-light flex items-center justify-center transition-all active:scale-95 outline-none ${s.keypad}`}>
                             {n}
                         </button>
                     ))}
                     <div className="w-20 h-20 mx-auto flex items-center justify-center">
-                         <button onClick={onCancel} className="text-white/50 text-xs font-bold tracking-widest uppercase hover:text-white transition-colors py-4">
+                         <button onClick={onCancel} className={`text-xs font-bold tracking-widest uppercase transition-colors py-4 ${s.keypadAction}`}>
                             Cancel
                         </button>
                     </div>
-                    <button onClick={() => handleNumClick("0")} className="w-20 h-20 mx-auto rounded-full bg-white/5 active:bg-white/20 text-3xl font-light flex items-center justify-center transition-all active:scale-95 outline-none">0</button>
-                    <button onClick={handleBackspace} className="w-20 h-20 mx-auto rounded-full hover:bg-white/5 active:scale-90 flex items-center justify-center text-white/60 transition-all outline-none">
+                    <button onClick={() => handleNumClick("0")} className={`w-20 h-20 mx-auto rounded-full text-3xl font-light flex items-center justify-center transition-all active:scale-95 outline-none ${s.keypad}`}>0</button>
+                    <button onClick={handleBackspace} className={`w-20 h-20 mx-auto rounded-full active:scale-90 flex items-center justify-center transition-all outline-none ${s.keypadAction}`}>
                         <Icon name="arrowLeft" size={28} />
                     </button>
                 </div>
@@ -1196,49 +1256,56 @@ const LockMethodModal: React.FC<{
     onSelectCustom: () => void; 
     onCancel: () => void;
     globalAvailable: boolean; 
-}> = ({ onSelectGlobal, onSelectCustom, onCancel, globalAvailable }) => {
+    theme: Theme;
+}> = ({ onSelectGlobal, onSelectCustom, onCancel, globalAvailable, theme }) => {
+    const s = THEME_STYLES[theme];
+    
+    // Additional style overrides for modal-specific parts
+    const modalBg = theme === 'neo-glass' ? 'bg-black/80 backdrop-blur-xl border border-white/20' : (theme === 'vision' ? 'bg-[#182545] border border-[#1F2C4D]' : s.cardBase);
+    const borderColor = theme === 'neo-glass' ? 'border-white/10' : (theme === 'vision' ? 'border-[#1F2C4D]' : 'border-gray-100 dark:border-gray-800');
+    
     return (
         <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center backdrop-blur-sm p-4">
-            <div className="bg-white dark:bg-[#1e1e1e] rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-slide-up">
-                <div className="p-6 text-center border-b border-gray-100 dark:border-gray-800">
-                    <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600 dark:text-blue-400">
+            <div className={`rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-slide-up ${modalBg}`}>
+                <div className={`p-6 text-center border-b ${borderColor}`}>
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${theme === 'neo-glass' ? 'bg-white/20 text-white' : (theme === 'vision' ? 'bg-[#0B132B] text-[#2F6BFF]' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400')}`}>
                         <Icon name="lock" size={24} />
                     </div>
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Lock Note</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Choose how you want to secure this note.</p>
+                    <h3 className={`text-lg font-bold mb-2 ${s.text}`}>Lock Note</h3>
+                    <p className={`text-sm ${s.secondaryText}`}>Choose how you want to secure this note.</p>
                 </div>
                 
                 <div className="p-4 space-y-3">
                     <button 
                         onClick={onSelectGlobal}
                         disabled={!globalAvailable}
-                        className={`w-full p-4 rounded-xl flex items-center gap-4 text-left border-2 transition-all ${globalAvailable ? 'border-gray-100 dark:border-gray-800 hover:border-blue-500 dark:hover:border-blue-500' : 'opacity-50 cursor-not-allowed border-transparent bg-gray-50 dark:bg-gray-800/50'}`}
+                        className={`w-full p-4 rounded-xl flex items-center gap-4 text-left border-2 transition-all ${globalAvailable ? (theme === 'neo-glass' ? 'border-white/10 hover:border-white/30 hover:bg-white/5' : (theme === 'vision' ? 'border-[#1F2C4D] hover:border-[#2F6BFF]' : 'border-gray-100 dark:border-gray-800 hover:border-blue-500 dark:hover:border-blue-500')) : 'opacity-50 cursor-not-allowed border-transparent bg-black/5 dark:bg-white/5'}`}
                     >
-                        <div className={`p-2 rounded-lg ${globalAvailable ? 'bg-blue-500 text-white' : 'bg-gray-300 text-gray-500'}`}>
+                        <div className={`p-2 rounded-lg ${globalAvailable ? (theme === 'vision' ? 'bg-[#2F6BFF] text-white' : 'bg-blue-500 text-white') : 'bg-gray-300 text-gray-500'}`}>
                             <Icon name="lock" size={20} />
                         </div>
                         <div>
-                            <div className="font-bold text-gray-900 dark:text-white">Use App PIN</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">{globalAvailable ? "Uses the main security PIN" : "Main PIN not set up"}</div>
+                            <div className={`font-bold ${s.text}`}>Use App PIN</div>
+                            <div className={`text-xs ${s.secondaryText}`}>{globalAvailable ? "Uses the main security PIN" : "Main PIN not set up"}</div>
                         </div>
                     </button>
 
                     <button 
                         onClick={onSelectCustom}
-                        className="w-full p-4 rounded-xl flex items-center gap-4 text-left border-2 border-gray-100 dark:border-gray-800 hover:border-purple-500 dark:hover:border-purple-500 transition-all"
+                        className={`w-full p-4 rounded-xl flex items-center gap-4 text-left border-2 transition-all ${theme === 'neo-glass' ? 'border-white/10 hover:border-white/30 hover:bg-white/5' : (theme === 'vision' ? 'border-[#1F2C4D] hover:border-purple-500' : 'border-gray-100 dark:border-gray-800 hover:border-purple-500')}`}
                     >
                         <div className="p-2 rounded-lg bg-purple-500 text-white">
                             <Icon name="lock" size={20} />
                         </div>
                         <div>
-                            <div className="font-bold text-gray-900 dark:text-white">Custom PIN</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">Set a unique PIN for this note</div>
+                            <div className={`font-bold ${s.text}`}>Custom PIN</div>
+                            <div className={`text-xs ${s.secondaryText}`}>Set a unique PIN for this note</div>
                         </div>
                     </button>
                 </div>
 
-                <div className="p-4 bg-gray-50 dark:bg-black/20 text-center">
-                    <button onClick={onCancel} className="text-gray-500 font-medium text-sm hover:text-gray-900 dark:hover:text-white">Cancel</button>
+                <div className={`p-4 text-center ${theme === 'neo-glass' ? 'bg-white/5' : (theme === 'vision' ? 'bg-[#0B132B]/50' : 'bg-gray-50 dark:bg-black/20')}`}>
+                    <button onClick={onCancel} className={`font-medium text-sm hover:opacity-80 ${s.secondaryText}`}>Cancel</button>
                 </div>
             </div>
         </div>
@@ -1665,17 +1732,17 @@ export default function App() {
 
   // Full Screen Overlays
   if (isAppLocked) {
-      return <AuthModal onUnlock={handleAuthSuccess} />;
+      return <AuthModal onUnlock={handleAuthSuccess} theme={theme} />;
   }
 
   if (showSecuritySetup) {
       // Global Setup
-      return <SecuritySetupModal onComplete={handleGlobalSetupComplete} onCancel={() => setShowSecuritySetup(false)} />;
+      return <SecuritySetupModal onComplete={handleGlobalSetupComplete} onCancel={() => setShowSecuritySetup(false)} theme={theme} />;
   }
   
   if (showCustomLockSetup) {
       // Per-Note Setup
-      return <SecuritySetupModal onComplete={handleSetCustomLock} onCancel={() => setShowCustomLockSetup(false)} />;
+      return <SecuritySetupModal onComplete={handleSetCustomLock} onCancel={() => setShowCustomLockSetup(false)} theme={theme} />;
   }
 
   if (showLockMethodModal) {
@@ -1684,6 +1751,7 @@ export default function App() {
                 onSelectCustom={() => { setShowLockMethodModal(false); setShowCustomLockSetup(true); }} 
                 onCancel={() => setShowLockMethodModal(false)}
                 globalAvailable={hasSecuritySetup} 
+                theme={theme}
             />;
   }
   
@@ -1692,6 +1760,7 @@ export default function App() {
         onUnlock={handleAuthSuccess} 
         onCancel={() => { setShowAuthModal(false); setPendingAuthNote(null); }} 
         customSecurity={pendingAuthNote?.lockMode === 'CUSTOM' ? pendingAuthNote.security : undefined}
+        theme={theme}
       />;
   }
 
