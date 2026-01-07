@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Icon } from '../components/Icon';
 import { Note, EncryptedData, Folder } from '../types';
 import { SecurityService } from '../services/SecurityService';
+import { StorageService } from '../services/StorageService';
 import { useTheme, NOTE_COLORS } from '../contexts/ThemeContext';
-import { useSecurity } from '../contexts/SecurityContext';
 
 interface EditorViewProps { 
   note: Note; 
@@ -23,18 +23,18 @@ export const EditorView: React.FC<EditorViewProps> = ({
   
   const [isEditing, setIsEditing] = useState(initialEditMode);
   const [title, setTitle] = useState(note.title);
-  const [content, setContent] = useState(note.content);
+  // We use contentState only for initial render and non-editable view
+  const [contentState, setContentState] = useState<string>('');
   
   const [isDecrypted, setIsDecrypted] = useState(!note.encryptedData);
   const [decryptionError, setDecryptionError] = useState(false);
+  const [isLoadingContent, setIsLoadingContent] = useState(true);
 
   const [tags, setTags] = useState<string[]>(note.tags || []);
   const [color, setColor] = useState(note.color || 'default');
   const [folderId, setFolderId] = useState(note.folderId || '');
   const [location, setLocation] = useState(note.location);
   
-  const [history, setHistory] = useState<string[]>([note.content]);
-  const [historyIndex, setHistoryIndex] = useState(0);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [newTag, setNewTag] = useState('');
@@ -48,54 +48,112 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const saveTimeoutRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-     if (note.isLocked !== undefined && note.isLocked !== (title === '' && content === '')) {
-     }
-  }, [note.isLocked, note.lockMode]);
+  // Helper: Expand placeholders to real base64 for display
+  const expandMedia = useCallback(async (html: string): Promise<string> => {
+      const regex = /src="\[\[FILE:([^"]+)\]\]"/g;
+      const matches = [...html.matchAll(regex)];
+      let newHtml = html;
+      
+      for (const m of matches) {
+          const placeholder = m[0];
+          const filename = m[1];
+          const base64 = await StorageService.loadMedia(filename);
+          if (base64) {
+              newHtml = newHtml.replace(placeholder, `src="${base64}" data-filename="${filename}"`);
+          }
+      }
+      return newHtml;
+  }, []);
+
+  // Helper: Compress real base64 to placeholders for storage
+  const compressMedia = (html: string): string => {
+      const div = document.createElement('div');
+      div.innerHTML = html;
+      
+      const imgs = div.querySelectorAll('img');
+      imgs.forEach(img => {
+          const filename = img.getAttribute('data-filename');
+          if (filename) {
+              img.setAttribute('src', `[[FILE:${filename}]]`);
+          }
+      });
+
+      const audios = div.querySelectorAll('audio');
+      audios.forEach(audio => {
+          const filename = audio.getAttribute('data-filename');
+          if (filename) {
+              audio.setAttribute('src', `[[FILE:${filename}]]`);
+          }
+      });
+      
+      return div.innerHTML;
+  };
 
   useEffect(() => {
-    const decryptContent = async () => {
+    const initContent = async () => {
+      setIsLoadingContent(true);
+      let loadedContent = note.content;
+      let loadedTitle = note.title;
+
       if (note.encryptedData) {
         if (!activeNoteKey) {
            setDecryptionError(true);
+           setIsLoadingContent(false);
            return;
         }
         try {
            const encryptedData: EncryptedData = JSON.parse(note.encryptedData);
            const jsonString = await SecurityService.decrypt(encryptedData, activeNoteKey);
            const payload = JSON.parse(jsonString);
-           setTitle(payload.title);
-           setContent(payload.content);
+           loadedTitle = payload.title;
+           loadedContent = payload.content;
            setIsDecrypted(true);
            setDecryptionError(false);
         } catch (e) {
            console.error("Decryption failed", e);
            setDecryptionError(true);
+           setIsLoadingContent(false);
+           return;
         }
       } else {
         setIsDecrypted(true);
         setDecryptionError(false);
       }
+
+      // Expand Media
+      const expanded = await expandMedia(loadedContent);
+      setTitle(loadedTitle);
+      setContentState(expanded);
+      
+      // Update the editable div if it exists and is empty/different
+      if (contentRef.current) {
+          contentRef.current.innerHTML = expanded;
+      }
+      
+      setIsLoadingContent(false);
     };
-    decryptContent();
-  }, [note.encryptedData, note.id, activeNoteKey]);
+
+    initContent();
+  }, [note.id, note.encryptedData, activeNoteKey, expandMedia]);
 
   const handleSave = useCallback(async () => {
-    let plainText = note.plainTextPreview;
+    let currentHtml = contentState;
     if (isEditing && contentRef.current) {
-         plainText = contentRef.current.innerText;
-    } else if (!isEditing) {
-        if (!note.plainTextPreview && content) {
-             const temp = document.createElement("div");
-             temp.innerHTML = content;
-             plainText = temp.innerText;
-        }
+         currentHtml = contentRef.current.innerHTML;
     }
+    
+    // Create plain text preview
+    const temp = document.createElement("div");
+    temp.innerHTML = currentHtml;
+    const plainText = temp.innerText;
+
+    // Compress content (offload binaries)
+    const compressedContent = compressMedia(currentHtml);
 
     let updatedNote: Note = {
       ...note,
       title,
-      content,
+      content: compressedContent,
       plainTextPreview: plainText,
       updatedAt: Date.now(),
       isSynced: false,
@@ -107,7 +165,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
     if (updatedNote.isLocked && activeNoteKey) {
         try {
-            const payload = JSON.stringify({ title, content });
+            const payload = JSON.stringify({ title, content: compressedContent });
             const encrypted = await SecurityService.encrypt(payload, activeNoteKey);
             updatedNote.encryptedData = JSON.stringify(encrypted);
             updatedNote.content = ""; 
@@ -120,51 +178,34 @@ export const EditorView: React.FC<EditorViewProps> = ({
         updatedNote.encryptedData = undefined;
         updatedNote.lockMode = undefined;
         updatedNote.security = undefined;
-        updatedNote.content = content;
+        updatedNote.content = compressedContent;
         updatedNote.title = title;
     }
 
     onSave(updatedNote);
-  }, [note, title, content, tags, color, folderId, location, onSave, isEditing, activeNoteKey]);
+    // Update local state to match (expanded) for continuity
+    // We don't need to do anything here because contentState still holds the expanded version
+  }, [note, title, tags, color, folderId, location, onSave, isEditing, activeNoteKey, contentState]);
 
+  // Auto-save logic
   useEffect(() => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    if (!isDecrypted) return; 
+    if (!isDecrypted || isLoadingContent) return;
 
-    if (title === note.title && content === note.content && JSON.stringify(tags) === JSON.stringify(note.tags) && color === note.color && folderId === (note.folderId || '') && location === note.location) return;
-
+    // We check against refs or basic state change detection
+    // For content, since we don't update state on every keystroke, checking contentState might be stale if editing
+    // We rely on explicit save or back button mostly, but auto-save is nice.
+    // To support auto-save without state thrashing, we can check contentRef periodically
+    
     saveTimeoutRef.current = setTimeout(() => {
-      handleSave();
-    }, 1000);
+        handleSave();
+    }, 2000); // 2 seconds debounce
 
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [title, content, tags, color, folderId, location, handleSave, isDecrypted]);
+  }, [title, tags, color, folderId, location, handleSave, isDecrypted, isLoadingContent]);
 
-  const handleContentChange = (newContent: string) => {
-    setContent(newContent);
-    if (newContent !== history[historyIndex]) {
-        const newHistory = history.slice(0, historyIndex + 1);
-        newHistory.push(newContent);
-        setHistory(newHistory);
-        setHistoryIndex(newHistory.length - 1);
-    }
-  };
-
-  const handleUndo = () => {
-    if (historyIndex > 0) {
-        setHistoryIndex(historyIndex - 1);
-        setContent(history[historyIndex - 1]);
-    }
-  };
-
-  const handleRedo = () => {
-    if (historyIndex < history.length - 1) {
-        setHistoryIndex(historyIndex + 1);
-        setContent(history[historyIndex + 1]);
-    }
-  };
 
   const handleAddTag = () => {
       if(newTag.trim() && !tags.includes(newTag.trim())) {
@@ -179,35 +220,40 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   const execCmd = (command: string, value: string | undefined = undefined) => {
     document.execCommand(command, false, value);
-    if (contentRef.current) handleContentChange(contentRef.current.innerHTML);
+    if (contentRef.current) {
+        // We don't setContentState here to avoid re-renders losing cursor
+    }
   };
 
   const insertHtml = (html: string) => {
       if (contentRef.current) {
           contentRef.current.focus();
           document.execCommand('insertHTML', false, html);
-          // Insert a line break after media for better editing flow
           document.execCommand('insertHTML', false, '<br>');
-          handleContentChange(contentRef.current.innerHTML);
       }
   };
 
   // --- Media Handlers ---
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
           const reader = new FileReader();
-          reader.onload = (event) => {
+          reader.onload = async (event) => {
               const base64 = event.target?.result as string;
               if (base64) {
-                  const imgHtml = `<img src="${base64}" class="max-w-full rounded-xl my-2 shadow-sm border border-black/5" />`;
-                  insertHtml(imgHtml);
+                  // Save to FS immediately
+                  const filename = await StorageService.saveMedia(base64);
+                  if (filename) {
+                      const imgHtml = `<img src="${base64}" data-filename="${filename}" class="max-w-full rounded-xl my-2 shadow-sm border border-black/5" />`;
+                      insertHtml(imgHtml);
+                  } else {
+                      alert("Failed to save image");
+                  }
               }
           };
           reader.readAsDataURL(file);
       }
-      // Reset input
       if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -229,15 +275,20 @@ export const EditorView: React.FC<EditorViewProps> = ({
                   const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
                   const reader = new FileReader();
                   reader.readAsDataURL(audioBlob);
-                  reader.onloadend = () => {
-                      const base64data = reader.result;
-                      const audioHtml = `
-                        <div class="my-2 p-2 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center gap-2 border border-black/5">
-                            <span class="text-xs font-bold uppercase tracking-wider opacity-50">Voice Note</span>
-                            <audio controls src="${base64data}" class="h-8 w-full"></audio>
-                        </div>
-                      `;
-                      insertHtml(audioHtml);
+                  reader.onloadend = async () => {
+                      const base64data = reader.result as string;
+                      // Save to FS
+                      const filename = await StorageService.saveMedia(base64data);
+                      
+                      if (filename) {
+                        const audioHtml = `
+                            <div class="my-2 p-2 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center gap-2 border border-black/5" contenteditable="false">
+                                <span class="text-xs font-bold uppercase tracking-wider opacity-50 select-none">Voice Note</span>
+                                <audio controls src="${base64data}" data-filename="${filename}" class="h-8 w-full"></audio>
+                            </div>
+                        `;
+                        insertHtml(audioHtml);
+                      }
                       stream.getTracks().forEach(track => track.stop());
                   };
               };
@@ -271,11 +322,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const handleShare = async () => {
       if (navigator.share) {
           try {
-              // Strip HTML for sharing text
-              const tempDiv = document.createElement("div");
-              tempDiv.innerHTML = content;
-              const plainText = tempDiv.innerText;
-              
+              const plainText = contentRef.current ? contentRef.current.innerText : note.plainTextPreview;
               await navigator.share({
                   title: title || 'CloudPad Note',
                   text: `${title}\n\n${plainText}`,
@@ -292,6 +339,15 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const editorBgClass = theme === 'neo-glass' 
     ? 'bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 bg-fixed' 
     : noteColorClass.split(' ')[0] + ' min-h-[100dvh]'; 
+
+  if (isLoadingContent) {
+      return (
+          <div className={`flex flex-col min-h-[100dvh] items-center justify-center ${editorBgClass}`}>
+              <Icon name="cloud" size={48} className={`animate-pulse opacity-50 mb-4 ${styles.text}`} />
+              <p className={styles.text}>Loading note...</p>
+          </div>
+      );
+  }
 
   if (!isDecrypted && !decryptionError) {
       return (
@@ -387,7 +443,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
                      </div>
                 </div>
                 
-                {/* Location Display in Settings */}
                 <div className="mb-4">
                     <label className={`text-xs block mb-2 ${styles.secondaryText}`}>Location</label>
                     <div className={`flex items-center justify-between p-2 rounded-lg ${styles.input}`}>
@@ -426,7 +481,15 @@ export const EditorView: React.FC<EditorViewProps> = ({
             {isEditing ? (
                 <>
                     <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className={`w-full text-2xl md:text-3xl font-bold bg-transparent border-none outline-none mb-4 ${styles.text} ${styles.searchBarPlaceholder}`} />
-                    <div ref={contentRef} contentEditable onInput={(e) => handleContentChange(e.currentTarget.innerHTML)} className={`w-full min-h-[50vh] text-lg leading-relaxed outline-none empty:before:content-[attr(data-placeholder)] ${styles.text} ${theme === 'neo-glass' ? 'empty:before:text-white/40' : 'empty:before:text-gray-400'}`} data-placeholder="Start typing..." dangerouslySetInnerHTML={{__html: content}} />
+                    <div 
+                        ref={contentRef} 
+                        contentEditable 
+                        className={`w-full min-h-[50vh] text-lg leading-relaxed outline-none empty:before:content-[attr(data-placeholder)] ${styles.text} ${theme === 'neo-glass' ? 'empty:before:text-white/40' : 'empty:before:text-gray-400'}`} 
+                        data-placeholder="Start typing..." 
+                        dangerouslySetInnerHTML={{__html: contentState}}
+                        // We do NOT bind onInput to setContentState to avoid cursor jump issues.
+                        // We only read from contentRef during save.
+                    />
                 </>
             ) : (
                 <>
@@ -448,7 +511,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                             )}
                         </div>
                     </div>
-                    <div className={`w-full min-h-[50vh] text-lg leading-relaxed break-words prose max-w-none ${theme === 'dark' || theme === 'neo-glass' || theme === 'vision' ? 'prose-invert' : ''} ${styles.text}`} dangerouslySetInnerHTML={{__html: content || "<p class='opacity-50 italic'>No content</p>"}} />
+                    <div className={`w-full min-h-[50vh] text-lg leading-relaxed break-words prose max-w-none ${theme === 'dark' || theme === 'neo-glass' || theme === 'vision' ? 'prose-invert' : ''} ${styles.text}`} dangerouslySetInnerHTML={{__html: contentState || "<p class='opacity-50 italic'>No content</p>"}} />
                 </>
             )}
         </div>

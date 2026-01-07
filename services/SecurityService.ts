@@ -18,8 +18,9 @@ export class SecurityService {
   }
 
   // Convert buffer to Base64
-  private static bufToBase64(buf: ArrayBuffer): string {
-    return btoa(String.fromCharCode(...new Uint8Array(buf)));
+  private static bufToBase64(buf: ArrayBuffer | Uint8Array): string {
+    const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+    return btoa(String.fromCharCode(...bytes));
   }
 
   // Convert Base64 to Uint8Array

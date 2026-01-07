@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
-import { Note, Folder, UserProfile, ViewState } from '../types';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { Note, Folder, UserProfile } from '../types';
 import { DriveService } from '../services/DriveService';
+import { StorageService } from '../services/StorageService';
 
 interface NotesContextType {
   notes: Note[];
@@ -9,6 +10,7 @@ interface NotesContextType {
   isIncognito: boolean;
   isSyncing: boolean;
   syncSuccess: boolean;
+  isLoading: boolean;
   
   // Actions
   addNote: (note: Note) => void;
@@ -35,52 +37,71 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Load Data
   useEffect(() => {
-    const savedNotes = localStorage.getItem('notes');
-    if (savedNotes) {
-      let loadedNotes: Note[] = JSON.parse(savedNotes);
-      // Auto-delete trash older than 30 days
-      const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-      const now = Date.now();
-      loadedNotes = loadedNotes.filter(note => {
-        if (note.isTrashed && note.deletedAt) {
-            return (now - note.deletedAt) <= THIRTY_DAYS_MS;
+    const initData = async () => {
+        setIsLoading(true);
+        try {
+            await StorageService.init();
+            
+            const savedNotes = await StorageService.getNotes();
+            const savedFolders = await StorageService.getFolders();
+            
+            if (savedNotes && savedNotes.length > 0) {
+                // Auto-delete trash older than 30 days
+                const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+                const now = Date.now();
+                const cleanedNotes = savedNotes.filter(note => {
+                    if (note.isTrashed && note.deletedAt) {
+                        return (now - note.deletedAt) <= THIRTY_DAYS_MS;
+                    }
+                    return true; 
+                });
+                setNotes(cleanedNotes);
+            } else {
+                // Welcome note
+                setNotes([{
+                    id: 'welcome-1',
+                    title: 'Welcome to CloudPad',
+                    content: 'This is a sample note showing off the features.',
+                    plainTextPreview: 'This is a sample note showing off the features.',
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                    isPinned: true,
+                    color: 'default',
+                    tags: ['welcome']
+                }]);
+            }
+            
+            if (savedFolders) setFolders(savedFolders);
+            
+            // Init Drive (async)
+            driveService.init("YOUR_API_KEY", "YOUR_CLIENT_ID")
+                .catch(e => console.warn("Drive Init Error:", e));
+                
+        } catch (e) {
+            console.error("Failed to initialize storage", e);
+        } finally {
+            setIsLoading(false);
         }
-        return true; 
-      });
-      setNotes(loadedNotes);
-    } else {
-        // Welcome note
-        setNotes([{
-            id: 'welcome-1',
-            title: 'Welcome to CloudPad',
-            content: 'This is a sample note showing off the features.',
-            plainTextPreview: 'This is a sample note showing off the features.',
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            isPinned: true,
-            color: 'default',
-            tags: ['welcome']
-        }]);
-    }
-
-    const savedFolders = localStorage.getItem('folders');
-    if (savedFolders) setFolders(JSON.parse(savedFolders));
-
-    driveService.init("YOUR_API_KEY", "YOUR_CLIENT_ID")
-        .catch(e => console.warn("Drive Init Error:", e));
+    };
+    initData();
   }, []);
 
   // Persistence
   useEffect(() => {
-    localStorage.setItem('notes', JSON.stringify(notes));
-  }, [notes]);
+    if (!isLoading) {
+        StorageService.saveNotes(notes);
+    }
+  }, [notes, isLoading]);
   
   useEffect(() => {
-    localStorage.setItem('folders', JSON.stringify(folders));
-  }, [folders]);
+    if (!isLoading) {
+        StorageService.saveFolders(folders);
+    }
+  }, [folders, isLoading]);
 
   const activeNotes = isIncognito ? incognitoNotes : notes;
   const setActiveNotes = isIncognito ? setIncognitoNotes : setNotes;
@@ -152,6 +173,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isIncognito,
         isSyncing,
         syncSuccess,
+        isLoading,
         addNote,
         updateNote,
         deleteNote,
