@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Note } from '../types';
 import { Icon } from './Icon';
 import { useTheme, NOTE_COLORS } from '../contexts/ThemeContext';
@@ -10,12 +10,21 @@ interface NoteCardProps {
     onRestore?: (e: React.MouseEvent) => void;
     onDeleteForever?: (e: React.MouseEvent) => void;
     isTrashView: boolean;
+    selectionMode: boolean;
+    isSelected: boolean;
+    onLongPress: (id: string) => void;
 }
 
-export const NoteCard: React.FC<NoteCardProps> = ({ note, onClick, onPin, onRestore, onDeleteForever, isTrashView }) => {
+export const NoteCard: React.FC<NoteCardProps> = ({ 
+    note, onClick, onPin, onRestore, onDeleteForever, isTrashView,
+    selectionMode, isSelected, onLongPress
+}) => {
   const { theme, styles } = useTheme();
   const colorKey = note.color || 'default';
   const colorClass = NOTE_COLORS[colorKey][theme];
+  
+  const timerRef = useRef<any>(null);
+  const isLongPress = useRef(false);
 
   const pinnedStyle = !isTrashView && note.isPinned 
     ? (theme === 'neo-glass' 
@@ -29,24 +38,58 @@ export const NoteCard: React.FC<NoteCardProps> = ({ note, onClick, onPin, onRest
   const isCustomLock = note.lockMode === 'CUSTOM';
   const isEncrypted = !!note.encryptedData;
   
-  // Media Detection
   const hasImage = !isEncrypted && note.content.includes('<img');
   const hasAudio = !isEncrypted && note.content.includes('<audio');
 
+  const handleTouchStart = () => {
+    isLongPress.current = false;
+    timerRef.current = setTimeout(() => {
+        isLongPress.current = true;
+        onLongPress(note.id);
+    }, 500);
+  };
+
+  const handleTouchEnd = () => {
+    if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+    }
+  };
+
+  const handleClick = () => {
+      if (isLongPress.current) {
+          isLongPress.current = false;
+          return;
+      }
+      onClick();
+  }
+
   return (
     <div 
-      onClick={onClick}
-      className={`${colorClass} ${styles.text} border rounded-2xl p-4 transition-all cursor-pointer relative overflow-hidden group mb-4 break-inside-avoid hover:shadow-lg ${pinnedStyle} ${isLocked ? 'ring-1 ring-inset ring-black/5 dark:ring-white/5' : ''}`}
+      onClick={handleClick}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onMouseDown={handleTouchStart}
+      onMouseUp={handleTouchEnd}
+      onMouseLeave={handleTouchEnd}
+      className={`${colorClass} ${styles.text} border rounded-2xl p-4 transition-all cursor-pointer relative overflow-hidden group mb-4 break-inside-avoid hover:shadow-lg ${pinnedStyle} ${isLocked ? 'ring-1 ring-inset ring-black/5 dark:ring-white/5' : ''} ${isSelected ? 'ring-2 ring-blue-500 scale-[0.98]' : ''} ${selectionMode && !isSelected ? 'opacity-70 scale-[0.98]' : ''}`}
     >
       <div className="flex justify-between items-start mb-2">
          <h3 className={`font-semibold text-lg line-clamp-2 leading-tight flex-1 pr-6 mb-1 ${(!note.title && isLocked) ? "italic opacity-50" : ""}`}>
             {note.title || (isLocked ? "Locked Note" : "Untitled")}
         </h3>
         
-        {!isTrashView && note.isPinned && (
-             <div className={`absolute top-0 right-0 p-2 rounded-bl-xl ${theme === 'vision' ? 'bg-[#2F6BFF] text-white' : 'bg-blue-500 text-white'}`}>
-                 <Icon name="pinFilled" size={12} fill={true} />
+        {/* If Selection Mode is active, show checkbox instead of Pin icon */}
+        {selectionMode ? (
+             <div className={`absolute top-2 right-2 p-1.5 rounded-full ${isSelected ? 'text-blue-500' : styles.secondaryText}`}>
+                 <Icon name={isSelected ? "checkCircle" : "circle"} size={20} fill={isSelected} />
              </div>
+        ) : (
+             !isTrashView && note.isPinned && (
+                <div className={`absolute top-0 right-0 p-2 rounded-bl-xl ${theme === 'vision' ? 'bg-[#2F6BFF] text-white' : 'bg-blue-500 text-white'}`}>
+                    <Icon name="pinFilled" size={12} fill={true} />
+                </div>
+            )
         )}
       </div>
       
@@ -65,7 +108,6 @@ export const NoteCard: React.FC<NoteCardProps> = ({ note, onClick, onPin, onRest
         </p>
       )}
 
-      {/* Content Indicators */}
       {!isLocked && (hasImage || hasAudio || note.location) && (
           <div className="flex gap-2 mb-3">
               {hasImage && <Icon name="image" size={14} className={styles.secondaryText} />}
@@ -95,7 +137,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({ note, onClick, onPin, onRest
         </span>
       </div>
       
-      {!isTrashView && (
+      {!selectionMode && !isTrashView && (
         <button 
             onClick={onPin}
             className={`absolute bottom-2 right-2 p-1.5 rounded-full transition-all ${styles.iconHover} ${note.isPinned ? `opacity-100 ${styles.primaryText}` : `opacity-0 group-hover:opacity-100 ${styles.secondaryText}`}`}
@@ -104,7 +146,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({ note, onClick, onPin, onRest
         </button>
       )}
 
-      {isTrashView && (
+      {!selectionMode && isTrashView && (
           <div className={`flex justify-end gap-2 mt-2 pt-2 border-t ${styles.divider}`}>
               <button 
                 onClick={onRestore}

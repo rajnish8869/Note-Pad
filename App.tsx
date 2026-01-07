@@ -28,6 +28,7 @@ const MainApp = () => {
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [activeNoteKey, setActiveNoteKey] = useState<CryptoKey | null>(null);
   const [activeNote, setActiveNote] = useState<Note | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
   
   // Modal States
   const [showSecuritySetup, setShowSecuritySetup] = useState(false);
@@ -42,15 +43,15 @@ const MainApp = () => {
   // State Ref for Back Button Listener
   const stateRef = useRef({
     view, isDrawerOpen, showAuthModal, showSecuritySetup, 
-    showLockSelection, isAppLocked
+    showLockSelection, isAppLocked, selectionMode
   });
 
   useEffect(() => {
     stateRef.current = { 
         view, isDrawerOpen, showAuthModal, showSecuritySetup, 
-        showLockSelection, isAppLocked
+        showLockSelection, isAppLocked, selectionMode
     };
-  }, [view, isDrawerOpen, showAuthModal, showSecuritySetup, showLockSelection, isAppLocked]);
+  }, [view, isDrawerOpen, showAuthModal, showSecuritySetup, showLockSelection, isAppLocked, selectionMode]);
 
   useEffect(() => {
     const backListener = CapacitorApp.addListener('backButton', ({ canGoBack }) => {
@@ -84,7 +85,13 @@ const MainApp = () => {
             return;
         }
 
-        // 4. View Navigation
+        // 4. Selection Mode (NEW)
+        if (state.selectionMode) {
+            setSelectionMode(false);
+            return;
+        }
+
+        // 5. View Navigation
         switch (state.view) {
             case 'EDITOR':
                 // Note: EditorView will save on unmount via its own cleanup
@@ -322,9 +329,11 @@ const MainApp = () => {
             onMenuClick={() => setIsDrawerOpen(true)}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
+            selectionMode={selectionMode}
+            setSelectionMode={setSelectionMode}
         />
         
-        {view !== 'TRASH' && <FAB onClick={handleCreateNote} />}
+        {view !== 'TRASH' && !selectionMode && <FAB onClick={handleCreateNote} />}
 
         <Drawer 
             isOpen={isDrawerOpen} 
