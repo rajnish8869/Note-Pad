@@ -35,12 +35,12 @@ const paths: Record<string, string> = {
   grid: "M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z",
   viewList: "M8 6h13M8 12h13M8 18h13M3 6h1v1H3zm0 6h1v1H3zm0 6h1v1H3z",
   sort: "M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z",
-  lock: "M19 11H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2zm0 0V9a7 7 0 0 0-14 0v2",
-  unlock: "M19 11H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2zm0 0V9a7 7 0 0 1 14 0v2",
+  // Updated Lock/Unlock to cleaner outline style
+  lock: "M7 11V7a5 5 0 0 1 10 0v4 M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z",
+  unlock: "M7 11V7a5 5 0 0 1 9.9-1 M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z",
   shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
   fingerprint: "M2 12C2 6.5 6.5 2 12 2a10 10 0 0 1 8 6",
   eyeOff: "M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24M1 1l22 22",
-  // Updated Incognito Icon (Hat and Glasses)
   incognito: "M20.5 10H17V9a1 1 0 0 0-1-1h-1.6a3 3 0 0 0-4.8 0H8a1 1 0 0 0-1 1v1H3.5a1.5 1.5 0 0 0 0 3h.14a4 4 0 0 0 7.72 0h1.28a4 4 0 0 0 7.72 0h.14a1.5 1.5 0 0 0 0-3zm-13 4a2 2 0 1 1 2-2 2 2 0 0 1-2 2zm9 0a2 2 0 1 1 2-2 2 2 0 0 1-2 2z",
   fileText: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8"
 };

@@ -222,7 +222,7 @@ const NoteCard: React.FC<{
                 : (theme === 'vision' ? 'bg-[#0B132B] border-[#1F2C4D]' : 'bg-gray-50 dark:bg-black/20 border-gray-200 dark:border-gray-800')
          }`}>
            <div className={`p-2 rounded-full ${isCustomLock ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-500' : 'bg-gray-200 dark:bg-gray-800 text-gray-500'}`}>
-                <Icon name={isCustomLock ? "shield" : "lock"} size={20} />
+                <Icon name="lock" size={20} />
            </div>
            <span className={`text-[10px] uppercase font-bold tracking-widest ${isCustomLock ? 'text-purple-500' : 'text-gray-500'}`}>
                 {isCustomLock ? "Private" : "Locked"}
@@ -1006,7 +1006,7 @@ const AuthModal: React.FC<{
         {/* Header / Display */}
         <div className="flex-1 flex flex-col items-center justify-center">
             <div className={`mb-6 transition-all ${error ? "animate-[shake_0.5s_ease-in-out]" : ""}`}>
-                <Icon name={customSecurity ? "shield" : "lock"} size={48} className="text-white/90" />
+                <Icon name="lock" size={48} className="text-white/90" />
             </div>
             
             {/* PIN Indicators */}
@@ -1202,7 +1202,7 @@ const LockMethodModal: React.FC<{
             <div className="bg-white dark:bg-[#1e1e1e] rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-slide-up">
                 <div className="p-6 text-center border-b border-gray-100 dark:border-gray-800">
                     <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600 dark:text-blue-400">
-                        <Icon name="shield" size={24} />
+                        <Icon name="lock" size={24} />
                     </div>
                     <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Lock Note</h3>
                     <p className="text-sm text-gray-500 dark:text-gray-400">Choose how you want to secure this note.</p>
@@ -1228,7 +1228,7 @@ const LockMethodModal: React.FC<{
                         className="w-full p-4 rounded-xl flex items-center gap-4 text-left border-2 border-gray-100 dark:border-gray-800 hover:border-purple-500 dark:hover:border-purple-500 transition-all"
                     >
                         <div className="p-2 rounded-lg bg-purple-500 text-white">
-                            <Icon name="shield" size={20} />
+                            <Icon name="lock" size={20} />
                         </div>
                         <div>
                             <div className="font-bold text-gray-900 dark:text-white">Custom PIN</div>
