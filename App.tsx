@@ -213,7 +213,6 @@ const NoteCard: React.FC<{
                  <Icon name="pinFilled" size={12} fill={true} />
              </div>
         )}
-        {note.isLocked && <Icon name={isCustomLock ? "shield" : "lock"} size={14} className={`${isCustomLock ? 'text-purple-500' : 'text-gray-400'} absolute top-4 right-8`} />}
       </div>
       
       {isLocked ? (
@@ -261,9 +260,9 @@ const NoteCard: React.FC<{
       {!isTrashView && (
         <button 
             onClick={onPin}
-            className={`absolute bottom-2 right-2 p-2 rounded-full transition-all ${theme === 'neo-glass' ? 'bg-white/10 hover:bg-white/20 text-white' : (theme === 'vision' ? 'bg-[#141F3A] hover:bg-[#24345C] text-[#E6ECF5]' : 'bg-black/5 dark:bg-white/10 text-gray-400 dark:text-gray-500 hover:text-primary-600')} ${note.isPinned ? 'opacity-100 text-primary-500' : 'opacity-0 group-hover:opacity-100'}`}
+            className={`absolute bottom-2 right-2 p-1.5 rounded-full transition-all ${theme === 'neo-glass' ? 'bg-white/10 hover:bg-white/20 text-white' : (theme === 'vision' ? 'bg-[#141F3A] hover:bg-[#24345C] text-[#E6ECF5]' : 'bg-black/5 dark:bg-white/10 text-gray-400 dark:text-gray-500 hover:text-primary-600')} ${note.isPinned ? 'opacity-100 text-primary-500' : 'opacity-0 group-hover:opacity-100'}`}
         >
-            <Icon name={note.isPinned ? 'pinFilled' : 'pin'} size={16} fill={note.isPinned} />
+            <Icon name={note.isPinned ? 'pinFilled' : 'pin'} size={14} fill={note.isPinned} />
         </button>
       )}
 
