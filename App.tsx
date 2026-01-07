@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Icon } from './components/Icon';
-import { Note, Theme, ViewState, UserProfile, Folder } from './types';
+import { Note, Theme, ViewState, UserProfile, Folder, EncryptedData, NoteSecurity } from './types';
 import { DriveService } from './services/DriveService';
+import { SecurityService } from './services/SecurityService';
 
 // NOTE: In a real native build, install the plugin: npm install @capacitor-community/native-biometric
 // import { NativeBiometric } from '@capacitor-community/native-biometric';
@@ -163,7 +164,7 @@ const COLOR_KEYS = Object.keys(NOTE_COLORS);
 const FAB: React.FC<{ onClick: () => void; theme: Theme }> = ({ onClick, theme }) => (
   <button
     onClick={onClick}
-    className={`fixed bottom-6 right-6 w-14 h-14 rounded-2xl flex items-center justify-center active:scale-95 transition-all z-30 focus:outline-none ring-offset-2 ring-primary-500 ${THEME_STYLES[theme].fab}`}
+    className={`fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-6 w-14 h-14 rounded-2xl flex items-center justify-center active:scale-95 transition-all z-30 focus:outline-none ring-offset-2 ring-primary-500 ${THEME_STYLES[theme].fab}`}
     aria-label="Create Note"
   >
     <Icon name="plus" size={28} />
@@ -192,29 +193,39 @@ const NoteCard: React.FC<{
             : 'border-primary-400/80 dark:border-primary-600 shadow-md ring-1 ring-primary-400/20')
     : '';
 
+  const isEncrypted = !!note.encryptedData;
+  const isCustomLock = note.lockMode === 'CUSTOM';
+
   return (
     <div 
       onClick={onClick}
       className={`${colorClass} ${styles.text} border rounded-2xl p-4 transition-all cursor-pointer relative overflow-hidden group mb-4 break-inside-avoid hover:shadow-lg ${pinnedStyle}`}
     >
       <div className="flex justify-between items-start mb-2">
-        {note.title && (
-            <h3 className="font-semibold text-lg line-clamp-2 leading-tight flex-1 pr-6 mb-1">
-            {note.title}
+        {isEncrypted ? (
+             <h3 className="font-semibold text-lg line-clamp-2 leading-tight flex-1 pr-6 mb-1 opacity-50 tracking-widest">
+                {isCustomLock ? "🔒 PRIVATE" : "••••••••••"}
             </h3>
+        ) : (
+             note.title && (
+                <h3 className="font-semibold text-lg line-clamp-2 leading-tight flex-1 pr-6 mb-1">
+                {note.title}
+                </h3>
+            )
         )}
+        
         {!isTrashView && note.isPinned && (
              <div className={`absolute top-0 right-0 p-2 rounded-bl-xl ${theme === 'vision' ? 'bg-[#2F6BFF] text-white' : 'bg-primary-500 text-white'}`}>
                  <Icon name="pinFilled" size={12} fill={true} />
              </div>
         )}
-        {note.isLocked && <Icon name="lock" size={14} className="text-red-500 absolute top-4 right-8" />}
+        {note.isLocked && <Icon name={isCustomLock ? "shield" : "lock"} size={14} className={`${isCustomLock ? 'text-purple-500' : 'text-red-500'} absolute top-4 right-8`} />}
       </div>
       
-      {note.isLocked ? (
+      {note.isLocked || isEncrypted ? (
         <div className="flex flex-col items-center justify-center py-4 opacity-50">
-           <Icon name="fingerprint" size={32} />
-           <span className="text-xs mt-2">Locked Note</span>
+           <Icon name={isCustomLock ? "shield" : "lock"} size={32} className="mb-2" />
+           <span className="text-xs">{isCustomLock ? "Custom PIN Locked" : "App Locked"}</span>
         </div>
       ) : (
         <p className={`text-sm line-clamp-[8] mb-3 min-h-[1.5rem] whitespace-pre-wrap ${styles.secondaryText} ${!note.title ? 'text-base pt-1' : ''}`}>
@@ -223,7 +234,7 @@ const NoteCard: React.FC<{
       )}
 
       {/* Tags */}
-      {note.tags && note.tags.length > 0 && !note.isLocked && (
+      {note.tags && note.tags.length > 0 && !note.isLocked && !isEncrypted && (
           <div className="flex flex-wrap gap-1 mb-3">
               {note.tags.slice(0, 3).map(tag => (
                   <span key={tag} className={`text-[10px] uppercase font-bold tracking-wide px-2 py-0.5 rounded ${theme === 'neo-glass' ? 'bg-white/20 text-white' : (theme === 'vision' ? 'bg-[#141F3A] text-[#7F8FB0]' : 'bg-black/5 dark:bg-white/10 text-gray-500 dark:text-gray-400')}`}>
@@ -241,7 +252,7 @@ const NoteCard: React.FC<{
         <span className="flex items-center gap-1">
              {note.updatedAt > note.createdAt ? "Edited" : ""} {new Date(note.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
              {!isTrashView && note.isSynced && <Icon name="check" size={10} className={theme === 'neo-glass' ? 'text-white' : 'text-green-500 ml-1'} />}
-             {note.isIncognito && <Icon name="eyeOff" size={12} className="ml-1 opacity-70" />}
+             {note.isIncognito && <Icon name="incognito" size={12} className="ml-1 opacity-70" />}
         </span>
       </div>
       
@@ -296,10 +307,12 @@ const Drawer: React.FC<{
   toggleAppLock: (enabled: boolean) => void;
   isIncognito: boolean;
   toggleIncognito: (enabled: boolean) => void;
+  hasSecuritySetup: boolean;
+  onSetupSecurity: () => void;
 }> = ({ 
     isOpen, onClose, theme, setTheme, user, onLogin, onLogout, onSync, isSyncing, 
     folders, currentView, currentFolderId, onChangeView, onCreateFolder, tags,
-    isAppLocked, toggleAppLock, isIncognito, toggleIncognito
+    isAppLocked, toggleAppLock, isIncognito, toggleIncognito, hasSecuritySetup, onSetupSecurity
 }) => {
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -329,8 +342,8 @@ const Drawer: React.FC<{
         className={`fixed inset-0 bg-black/30 backdrop-blur-sm z-40 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
         onClick={onClose}
       />
-      <div className={`fixed top-0 left-0 h-full w-[280px] z-50 shadow-2xl transform transition-transform duration-300 overflow-y-auto ${isOpen ? 'translate-x-0' : '-translate-x-full'} ${styles.drawer}`}>
-        <div className={`p-6 border-b ${theme === 'neo-glass' ? 'border-white/10' : (theme === 'vision' ? 'border-[#1F2C4D]' : 'border-gray-100 dark:border-gray-800')} flex flex-col items-center`}>
+      <div className={`fixed top-0 left-0 h-[100dvh] w-[280px] z-50 shadow-2xl transform transition-transform duration-300 overflow-y-auto pb-[env(safe-area-inset-bottom)] ${isOpen ? 'translate-x-0' : '-translate-x-full'} ${styles.drawer}`}>
+        <div className={`p-6 pt-[calc(1.5rem+env(safe-area-inset-top))] border-b ${theme === 'neo-glass' ? 'border-white/10' : (theme === 'vision' ? 'border-[#1F2C4D]' : 'border-gray-100 dark:border-gray-800')} flex flex-col items-center`}>
           <div className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold mb-3 overflow-hidden shadow-inner ${theme === 'neo-glass' ? 'bg-white/20 text-white' : (theme === 'vision' ? 'bg-[#141F3A] text-[#2F6BFF]' : 'bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-300')}`}>
             {user?.imageUrl ? (
                 <img src={user.imageUrl} alt={user.name} className="w-full h-full object-cover" />
@@ -363,16 +376,18 @@ const Drawer: React.FC<{
           <div className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider ${styles.secondaryText}`}>Security & Privacy</div>
           
           <button 
-             onClick={() => toggleAppLock(!isAppLocked)}
+             onClick={hasSecuritySetup ? () => toggleAppLock(!isAppLocked) : onSetupSecurity}
              className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors ${styles.text} ${styles.iconHover}`}
           >
              <div className="flex items-center gap-3">
                  <Icon name={isAppLocked ? "lock" : "unlock"} size={20} />
-                 <span>Biometric Lock</span>
+                 <span>{hasSecuritySetup ? "App Lock" : "Setup Secure PIN"}</span>
              </div>
-             <div className={`w-10 h-5 rounded-full relative transition-colors ${isAppLocked ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
-                 <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isAppLocked ? 'left-6' : 'left-1'}`} />
-             </div>
+             {hasSecuritySetup && (
+                <div className={`w-10 h-5 rounded-full relative transition-colors ${isAppLocked ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
+                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isAppLocked ? 'left-6' : 'left-1'}`} />
+                </div>
+             )}
           </button>
 
           <button 
@@ -487,11 +502,16 @@ const NoteEditor: React.FC<{
   initialEditMode: boolean;
   folders: Folder[];
   theme: Theme;
-  onLockToggle: (id: string) => void;
-}> = ({ note, onSave, onBack, onDelete, initialEditMode, folders, theme, onLockToggle }) => {
+  onLockToggle: () => void; // Trigger modal for lock setup/toggle
+  encryptionKey: CryptoKey | null;
+}> = ({ note, onSave, onBack, onDelete, initialEditMode, folders, theme, onLockToggle, encryptionKey }) => {
   const [isEditing, setIsEditing] = useState(initialEditMode);
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
+  // Separate state for decrypted flag to show loading
+  const [isDecrypted, setIsDecrypted] = useState(!note.encryptedData);
+  const [decryptionError, setDecryptionError] = useState(false);
+
   const [tags, setTags] = useState<string[]>(note.tags || []);
   const [color, setColor] = useState(note.color || 'default');
   const [folderId, setFolderId] = useState(note.folderId || '');
@@ -510,13 +530,40 @@ const NoteEditor: React.FC<{
   // Calculate background color for the editor itself based on theme and note color
   const noteColorClass = NOTE_COLORS[color][theme];
 
-  const handleSave = useCallback(() => {
+  // Decryption Effect
+  useEffect(() => {
+    const decryptContent = async () => {
+      if (note.encryptedData) {
+        if (!encryptionKey) {
+           setDecryptionError(true);
+           return;
+        }
+        try {
+           const encryptedData: EncryptedData = JSON.parse(note.encryptedData);
+           const jsonString = await SecurityService.decrypt(encryptedData, encryptionKey);
+           const payload = JSON.parse(jsonString);
+           setTitle(payload.title);
+           setContent(payload.content);
+           setIsDecrypted(true);
+           setDecryptionError(false);
+        } catch (e) {
+           console.error("Decryption failed", e);
+           setDecryptionError(true);
+        }
+      } else {
+        setIsDecrypted(true);
+      }
+    };
+    decryptContent();
+  }, [note, encryptionKey]);
+
+  const handleSave = useCallback(async () => {
     let plainText = note.plainTextPreview;
     if (isEditing && contentRef.current) {
          plainText = contentRef.current.innerText;
     }
 
-    const updatedNote: Note = {
+    let updatedNote: Note = {
       ...note,
       title,
       content,
@@ -527,14 +574,41 @@ const NoteEditor: React.FC<{
       color,
       folderId: folderId || undefined
     };
+
+    // If note is locked or was encrypted, we must encrypt before saving
+    // We use the currently active encryptionKey (derived from Global or Custom PIN)
+    if (updatedNote.isLocked && encryptionKey) {
+        try {
+            const payload = JSON.stringify({ title, content });
+            const encrypted = await SecurityService.encrypt(payload, encryptionKey);
+            updatedNote.encryptedData = JSON.stringify(encrypted);
+            // Clear visible content fields for security in storage
+            updatedNote.title = "";
+            updatedNote.content = "";
+            updatedNote.plainTextPreview = "";
+        } catch (e) {
+            console.error("Encryption failed on save", e);
+            // Fallback: don't save corrupted state
+            return;
+        }
+    } else if (!updatedNote.isLocked) {
+        // If unlocked, remove encryption data
+        updatedNote.encryptedData = undefined;
+        updatedNote.lockMode = undefined; // Reset mode
+        updatedNote.security = undefined; // Reset security params
+    }
+
     onSave(updatedNote);
     setLastSaved(Date.now());
-  }, [note, title, content, tags, color, folderId, onSave, isEditing]);
+  }, [note, title, content, tags, color, folderId, onSave, isEditing, encryptionKey]);
 
   // Auto-save logic
   useEffect(() => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    
+    // Don't auto-save if we haven't decrypted yet
+    if (!isDecrypted) return; 
+
+    // Simple diff check (not perfect for objects but good enough for debouncing)
     if (title === note.title && content === note.content && JSON.stringify(tags) === JSON.stringify(note.tags) && color === note.color && folderId === (note.folderId || '')) return;
 
     saveTimeoutRef.current = setTimeout(() => {
@@ -544,7 +618,7 @@ const NoteEditor: React.FC<{
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [title, content, tags, color, folderId, handleSave]);
+  }, [title, content, tags, color, folderId, handleSave, isDecrypted]);
 
   useEffect(() => {
     if (isEditing && contentRef.current && contentRef.current.innerHTML !== content) {
@@ -612,15 +686,36 @@ const NoteEditor: React.FC<{
 
   const editorBgClass = theme === 'neo-glass' 
     ? 'bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 bg-fixed' // Fixed: Use bg-fixed instead of fixed position
-    : noteColorClass.split(' ')[0] + ' min-h-screen'; 
+    : noteColorClass.split(' ')[0] + ' min-h-[100dvh]'; 
+
+  // Loading/Decryption State
+  if (!isDecrypted && !decryptionError) {
+      return (
+          <div className={`flex flex-col min-h-[100dvh] items-center justify-center ${editorBgClass}`}>
+              <Icon name="shield" size={48} className="animate-bounce opacity-50 mb-4" />
+              <p className={styles.text}>Decrypting secure note...</p>
+          </div>
+      );
+  }
+
+  if (decryptionError) {
+      return (
+        <div className={`flex flex-col min-h-[100dvh] items-center justify-center ${editorBgClass}`}>
+             <Icon name="lock" size={48} className="text-red-500 mb-4" />
+             <h2 className={`text-xl font-bold ${styles.text}`}>Authentication Required</h2>
+             <p className={`mb-4 ${styles.secondaryText}`}>Unlock your secure session to view this note.</p>
+             <button onClick={onBack} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg">Go Back</button>
+        </div>
+      );
+  }
 
   return (
-    <div className={`flex flex-col min-h-screen transition-colors duration-300 animate-slide-in relative ${editorBgClass}`}>
+    <div className={`flex flex-col min-h-[100dvh] transition-colors duration-300 animate-slide-in relative ${editorBgClass}`}>
       {/* Editor Content Wrapper to handle Neo-glass translucency */}
       <div className={`flex flex-col flex-1 ${theme === 'neo-glass' ? 'bg-white/10 backdrop-blur-3xl' : ''}`}>
         
         {/* Toolbar */}
-        <div className={`flex items-center justify-between p-2 md:p-4 sticky top-0 z-10 ${theme === 'neo-glass' ? 'bg-transparent' : (theme === 'vision' ? 'bg-[#0B132B]/90 backdrop-blur-md border-b border-[#1F2C4D]' : 'bg-white/50 dark:bg-black/50 backdrop-blur-md border-b border-black/5 dark:border-white/5')}`}>
+        <div className={`flex items-center justify-between sticky top-0 z-10 pt-[calc(0.5rem+env(safe-area-inset-top))] pb-2 px-2 md:px-4 ${theme === 'neo-glass' ? 'bg-transparent' : (theme === 'vision' ? 'bg-[#0B132B]/90 backdrop-blur-md border-b border-[#1F2C4D]' : 'bg-white/50 dark:bg-black/50 backdrop-blur-md border-b border-black/5 dark:border-white/5')}`}>
             <button onClick={() => { handleSave(); onBack(); }} className={`p-2 rounded-full ${styles.iconHover} ${styles.text}`}>
             <Icon name="arrowLeft" size={24} />
             </button>
@@ -662,11 +757,11 @@ const NoteEditor: React.FC<{
                 
                 {/* Security */}
                 <button 
-                    onClick={() => onLockToggle(note.id)}
+                    onClick={onLockToggle}
                     className={`w-full flex items-center gap-2 mb-4 p-2 rounded-lg text-sm ${note.isLocked ? 'bg-red-500/10 text-red-500' : `${styles.text} hover:bg-black/5 dark:hover:bg-white/5`}`}
                 >
                     <Icon name={note.isLocked ? "unlock" : "lock"} size={16} />
-                    {note.isLocked ? "Unlock Note" : "Lock Note"}
+                    {note.isLocked ? "Unlock Note" : "Lock Note (Encrypt)"}
                 </button>
 
                 <hr className={`my-3 ${theme === 'neo-glass' ? 'border-white/10' : (theme === 'vision' ? 'border-[#1F2C4D]' : 'border-gray-100 dark:border-gray-700')}`} />
@@ -784,7 +879,7 @@ const NoteEditor: React.FC<{
 
         {/* Formatting Toolbar - Only show in Edit mode */}
         {isEditing && (
-            <div className={`p-2 flex justify-around items-center safe-area-bottom ${theme === 'neo-glass' ? 'bg-black/40 backdrop-blur-xl border-t border-white/10' : (theme === 'vision' ? 'bg-[#0B132B]/90 backdrop-blur-md border-t border-[#1F2C4D]' : 'bg-white/90 dark:bg-black/90 backdrop-blur border-t border-gray-200 dark:border-gray-800')}`}>
+            <div className={`p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] flex justify-around items-center safe-area-bottom ${theme === 'neo-glass' ? 'bg-black/40 backdrop-blur-xl border-t border-white/10' : (theme === 'vision' ? 'bg-[#0B132B]/90 backdrop-blur-md border-t border-[#1F2C4D]' : 'bg-white/90 dark:bg-black/90 backdrop-blur border-t border-gray-200 dark:border-gray-800')}`}>
                 <button onClick={() => execCmd('bold')} className={`p-3 rounded-lg ${styles.iconHover} ${styles.text}`}>
                     <Icon name="bold" size={20} />
                 </button>
@@ -827,22 +922,322 @@ const NoteEditor: React.FC<{
   );
 };
 
-const LockScreen: React.FC<{ onUnlock: () => void }> = ({ onUnlock }) => (
-    <div className="fixed inset-0 z-[100] bg-gray-900 flex flex-col items-center justify-center text-white">
-        <div className="mb-6 p-6 rounded-full bg-white/10 animate-pulse">
-            <Icon name="lock" size={64} />
+// AuthModal supports both Global verification (localStorage) and Custom verification (passed params)
+const AuthModal: React.FC<{ 
+    onUnlock: (key: CryptoKey) => void; 
+    onCancel?: () => void; 
+    customSecurity?: NoteSecurity 
+}> = ({ onUnlock, onCancel, customSecurity }) => {
+    const [pin, setPin] = useState("");
+    const [error, setError] = useState(false);
+    const [verifying, setVerifying] = useState(false);
+
+    // Determine target length for auto-submit
+    const targetLength = useMemo(() => {
+        if (customSecurity && customSecurity.pinLength) return customSecurity.pinLength;
+        const storedGlobalLen = localStorage.getItem('sec_pin_length');
+        if (!customSecurity && storedGlobalLen) return parseInt(storedGlobalLen);
+        return 0; // Unknown
+    }, [customSecurity]);
+
+    useEffect(() => {
+        // Try biometrics immediately if available and we are using global security
+        if (!customSecurity) {
+            const tryBio = async () => {
+                const result = await NativeBiometric.isAvailable();
+                if (result.isAvailable) {
+                    // In a real app, call verifyIdentity and unlock
+                }
+            };
+            tryBio();
+        }
+    }, [customSecurity]);
+
+    const handleVerify = useCallback(async (code: string) => {
+        setVerifying(true);
+        let storedSalt: string | null = null;
+        let storedVerifier: string | null = null;
+
+        if (customSecurity) {
+            storedSalt = customSecurity.salt;
+            storedVerifier = customSecurity.verifier;
+        } else {
+            storedSalt = localStorage.getItem('sec_salt');
+            storedVerifier = localStorage.getItem('sec_verifier');
+        }
+
+        if (storedSalt && storedVerifier) {
+            const key = await SecurityService.verifyPassword(code, storedSalt, storedVerifier);
+            if (key) {
+                onUnlock(key);
+            } else {
+                setError(true);
+                setPin("");
+                setTimeout(() => setError(false), 500); // Quick shake reset
+            }
+        } else {
+            setError(true);
+        }
+        setVerifying(false);
+    }, [customSecurity, onUnlock]);
+
+    // Auto-verify effect
+    useEffect(() => {
+        if (targetLength > 0 && pin.length === targetLength) {
+            handleVerify(pin);
+        }
+    }, [pin, targetLength, handleVerify]);
+
+    const handleNumClick = (num: string) => {
+        if (pin.length < 8) { // Max arbitrary limit if unknown
+            setPin(prev => prev + num);
+        }
+    }
+
+    const handleBackspace = () => {
+        setPin(prev => prev.slice(0, -1));
+    }
+
+    return (
+    <div className="fixed inset-0 z-[100] flex flex-col pt-[env(safe-area-inset-top)] pb-[calc(2rem+env(safe-area-inset-bottom))] bg-gray-950/95 backdrop-blur-2xl text-white select-none min-h-[100dvh]">
+        
+        {/* Header / Display */}
+        <div className="flex-1 flex flex-col items-center justify-center">
+            <div className={`mb-6 transition-all ${error ? "animate-[shake_0.5s_ease-in-out]" : ""}`}>
+                <Icon name={customSecurity ? "shield" : "lock"} size={48} className="text-white/90" />
+            </div>
+            
+            {/* PIN Indicators */}
+            <div className={`flex gap-6 h-4 items-center justify-center mb-8 ${error ? "animate-[shake_0.5s_ease-in-out]" : ""}`}>
+                {targetLength > 0 ? (
+                    // Show exact placeholders if we know length
+                    Array.from({ length: targetLength }).map((_, i) => (
+                        <div 
+                            key={i} 
+                            className={`w-4 h-4 rounded-full border-2 transition-all duration-300 ${i < pin.length ? "bg-white border-white scale-110" : "bg-transparent border-white/30 scale-100"}`} 
+                        />
+                    ))
+                ) : (
+                    // Variable length indicators
+                    Array.from({ length: Math.max(4, pin.length) }).map((_, i) => (
+                        <div 
+                            key={i} 
+                            className={`w-4 h-4 rounded-full border-2 transition-all duration-300 ${i < pin.length ? "bg-white border-white scale-110" : "bg-transparent border-white/30"}`} 
+                        />
+                    ))
+                )}
+            </div>
+            
+            <p className="text-white/50 text-sm font-medium tracking-wide uppercase">{customSecurity ? "Private Note" : "Enter PIN"}</p>
         </div>
-        <h2 className="text-2xl font-bold mb-2">CloudPad Locked</h2>
-        <p className="text-gray-400 mb-8">Authentication required</p>
-        <button 
-            onClick={onUnlock}
-            className="px-8 py-3 bg-blue-600 rounded-full font-bold hover:bg-blue-700 transition-colors flex items-center gap-2"
-        >
-            <Icon name="fingerprint" size={24} />
-            Unlock
-        </button>
+
+        {/* Keypad */}
+        <div className="px-8 pb-4 w-full max-w-sm mx-auto">
+            <div className="grid grid-cols-3 gap-x-8 gap-y-6">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
+                    <button 
+                        key={n} 
+                        onClick={() => handleNumClick(n.toString())} 
+                        className="w-20 h-20 mx-auto rounded-full bg-white/5 active:bg-white/20 text-3xl font-light flex items-center justify-center transition-all active:scale-95 outline-none select-none"
+                    >
+                        {n}
+                    </button>
+                ))}
+                
+                {/* Bottom Row */}
+                <div className="w-20 h-20 mx-auto flex items-center justify-center">
+                   {onCancel && (
+                        <button onClick={onCancel} className="text-white/50 text-xs font-bold tracking-widest uppercase hover:text-white transition-colors py-4">
+                            Cancel
+                        </button>
+                    )}
+                </div>
+                
+                <button 
+                    onClick={() => handleNumClick("0")} 
+                    className="w-20 h-20 mx-auto rounded-full bg-white/5 active:bg-white/20 text-3xl font-light flex items-center justify-center transition-all active:scale-95 outline-none select-none"
+                >
+                    0
+                </button>
+                
+                <button 
+                    onClick={handleBackspace} 
+                    className="w-20 h-20 mx-auto rounded-full hover:bg-white/5 active:scale-90 flex items-center justify-center text-white/60 transition-all outline-none"
+                >
+                    <Icon name="arrowLeft" size={28} />
+                </button>
+            </div>
+        </div>
+
+        {/* Footer Actions / Unlock Button if length unknown */}
+        {targetLength === 0 && !onCancel && (
+             <div className="absolute bottom-[calc(2rem+env(safe-area-inset-bottom))] left-8">
+                 <button onClick={() => handleVerify(pin)} className="text-blue-400 font-medium">Unlock</button>
+             </div>
+        )}
     </div>
-);
+)};
+
+const SecuritySetupModal: React.FC<{ onComplete: (key: CryptoKey, security: NoteSecurity) => void; onCancel: () => void }> = ({ onComplete, onCancel }) => {
+    const [pin, setPin] = useState("");
+    const [confirmPin, setConfirmPin] = useState("");
+    const [step, setStep] = useState(1); // 1: Enter, 2: Confirm
+    const [error, setError] = useState("");
+    const [creating, setCreating] = useState(false);
+
+    const handleNumClick = (num: string) => {
+        // Enforce max length of 8 just for sanity, though technically unlimited
+        if (step === 1) {
+            if (pin.length < 8) setPin(pin + num);
+        } else {
+             if (confirmPin.length < 8) setConfirmPin(confirmPin + num);
+        }
+    }
+
+    const handleBackspace = () => {
+        if (step === 1) setPin(prev => prev.slice(0, -1));
+        else setConfirmPin(prev => prev.slice(0, -1));
+    }
+
+    const handleSubmit = useCallback(async () => {
+        if (pin !== confirmPin) {
+            setError("PINs do not match");
+            // Shake effect would be triggered by 'error' state in real UI
+            setTimeout(() => {
+                setConfirmPin(""); // Reset confirmation
+                setError("");
+            }, 1000);
+            return;
+        }
+
+        setCreating(true);
+        // Create Verifier
+        const { salt, verifier } = await SecurityService.createVerifier(pin);
+        
+        // Derive key for immediate use
+        const key = await SecurityService.verifyPassword(pin, salt, verifier);
+        if (key) {
+            onComplete(key, { salt, verifier, pinLength: pin.length });
+        } else {
+            setError("Error creating key");
+        }
+        setCreating(false);
+    }, [pin, confirmPin, onComplete]);
+
+    // Auto-submit when confirmation length matches original length
+    useEffect(() => {
+        if (step === 2 && confirmPin.length === pin.length && pin.length >= 4) {
+            handleSubmit();
+        }
+    }, [confirmPin, pin, step, handleSubmit]);
+
+    return (
+        <div className="fixed inset-0 z-[100] flex flex-col pt-[env(safe-area-inset-top)] pb-[calc(2rem+env(safe-area-inset-bottom))] bg-gray-950/95 backdrop-blur-2xl text-white select-none min-h-[100dvh]">
+             
+             {/* Header */}
+             <div className="flex-1 flex flex-col items-center justify-center">
+                <div className={`mb-6 transition-all ${step === 2 ? 'scale-110' : ''}`}>
+                     <Icon name={step === 1 ? "lock" : "check"} size={48} className={step === 1 ? "text-white/90" : "text-green-400"} />
+                </div>
+                
+                {/* Dots */}
+                <div className={`flex gap-6 h-4 items-center justify-center mb-8 ${error ? "animate-[shake_0.5s_ease-in-out]" : ""}`}>
+                    {/* Render dots based on current input length */}
+                    {Array.from({ length: Math.max(4, (step === 1 ? pin.length : confirmPin.length)) }).map((_, i) => (
+                        <div key={i} className={`w-4 h-4 rounded-full border-2 transition-all duration-300 ${i < (step === 1 ? pin.length : confirmPin.length) ? "bg-white border-white scale-110" : "bg-transparent border-white/30"}`} />
+                    ))}
+                </div>
+
+                <p className={`text-white/50 text-sm font-medium tracking-wide uppercase transition-all ${error ? "text-red-400" : ""}`}>
+                    {error || (step === 1 ? "Create PIN" : "Confirm PIN")}
+                </p>
+            </div>
+
+            {/* Keypad */}
+            <div className="px-8 pb-4 w-full max-w-sm mx-auto">
+                <div className="grid grid-cols-3 gap-x-8 gap-y-6">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
+                        <button key={n} onClick={() => handleNumClick(n.toString())} className="w-20 h-20 mx-auto rounded-full bg-white/5 active:bg-white/20 text-3xl font-light flex items-center justify-center transition-all active:scale-95 outline-none">
+                            {n}
+                        </button>
+                    ))}
+                    <div className="w-20 h-20 mx-auto flex items-center justify-center">
+                         <button onClick={onCancel} className="text-white/50 text-xs font-bold tracking-widest uppercase hover:text-white transition-colors py-4">
+                            Cancel
+                        </button>
+                    </div>
+                    <button onClick={() => handleNumClick("0")} className="w-20 h-20 mx-auto rounded-full bg-white/5 active:bg-white/20 text-3xl font-light flex items-center justify-center transition-all active:scale-95 outline-none">0</button>
+                    <button onClick={handleBackspace} className="w-20 h-20 mx-auto rounded-full hover:bg-white/5 active:scale-90 flex items-center justify-center text-white/60 transition-all outline-none">
+                        <Icon name="arrowLeft" size={28} />
+                    </button>
+                </div>
+            </div>
+
+            {/* Next Button for Step 1 */}
+            {step === 1 && pin.length >= 4 && (
+                 <div className="absolute bottom-[calc(2.5rem+env(safe-area-inset-bottom))] right-8">
+                    <button onClick={() => setStep(2)} className="bg-blue-600 text-white rounded-full p-4 shadow-lg animate-slide-in">
+                        <Icon name="arrowLeft" size={24} className="rotate-180" />
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
+const LockMethodModal: React.FC<{ 
+    onSelectGlobal: () => void; 
+    onSelectCustom: () => void; 
+    onCancel: () => void;
+    globalAvailable: boolean; 
+}> = ({ onSelectGlobal, onSelectCustom, onCancel, globalAvailable }) => {
+    return (
+        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center backdrop-blur-sm p-4">
+            <div className="bg-white dark:bg-[#1e1e1e] rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-slide-up">
+                <div className="p-6 text-center border-b border-gray-100 dark:border-gray-800">
+                    <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600 dark:text-blue-400">
+                        <Icon name="shield" size={24} />
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Lock Note</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Choose how you want to secure this note.</p>
+                </div>
+                
+                <div className="p-4 space-y-3">
+                    <button 
+                        onClick={onSelectGlobal}
+                        disabled={!globalAvailable}
+                        className={`w-full p-4 rounded-xl flex items-center gap-4 text-left border-2 transition-all ${globalAvailable ? 'border-gray-100 dark:border-gray-800 hover:border-blue-500 dark:hover:border-blue-500' : 'opacity-50 cursor-not-allowed border-transparent bg-gray-50 dark:bg-gray-800/50'}`}
+                    >
+                        <div className={`p-2 rounded-lg ${globalAvailable ? 'bg-blue-500 text-white' : 'bg-gray-300 text-gray-500'}`}>
+                            <Icon name="lock" size={20} />
+                        </div>
+                        <div>
+                            <div className="font-bold text-gray-900 dark:text-white">Use App PIN</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">{globalAvailable ? "Uses the main security PIN" : "Main PIN not set up"}</div>
+                        </div>
+                    </button>
+
+                    <button 
+                        onClick={onSelectCustom}
+                        className="w-full p-4 rounded-xl flex items-center gap-4 text-left border-2 border-gray-100 dark:border-gray-800 hover:border-purple-500 dark:hover:border-purple-500 transition-all"
+                    >
+                        <div className="p-2 rounded-lg bg-purple-500 text-white">
+                            <Icon name="shield" size={20} />
+                        </div>
+                        <div>
+                            <div className="font-bold text-gray-900 dark:text-white">Custom PIN</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">Set a unique PIN for this note</div>
+                        </div>
+                    </button>
+                </div>
+
+                <div className="p-4 bg-gray-50 dark:bg-black/20 text-center">
+                    <button onClick={onCancel} className="text-gray-500 font-medium text-sm hover:text-gray-900 dark:hover:text-white">Cancel</button>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 // --- Main App Component ---
 
@@ -878,31 +1273,32 @@ export default function App() {
   const [isAppLocked, setIsAppLocked] = useState(false); // Controls overlay
   const [isAppLockEnabled, setIsAppLockEnabled] = useState(false); // Controls preference
   const [isIncognito, setIsIncognito] = useState(false);
-
-  // --- Biometrics Logic ---
-  const performBiometricAuth = async (): Promise<boolean> => {
-    try {
-        const result = await NativeBiometric.isAvailable();
-        if(!result.isAvailable) return true; // Fallback if no hardware
-
-        await NativeBiometric.verifyIdentity({
-            reason: "Authentication required",
-            title: "Authenticate",
-            subtitle: "Verify your identity",
-            description: "Use biometric auth to unlock"
-        });
-        return true;
-    } catch (e) {
-        console.error("Biometric Error", e);
-        return false;
-    }
-  };
+  
+  // NEW: AES Security Context
+  const [hasSecuritySetup, setHasSecuritySetup] = useState(false);
+  const [sessionKey, setSessionKey] = useState<CryptoKey | null>(null); // Global Key
+  const [activeNoteKey, setActiveNoteKey] = useState<CryptoKey | null>(null); // Key for current note (Global or Custom)
+  
+  // Modals
+  const [showSecuritySetup, setShowSecuritySetup] = useState(false); // Global setup
+  const [showAuthModal, setShowAuthModal] = useState(false); // For ad-hoc unlocking
+  const [pendingAuthNote, setPendingAuthNote] = useState<Note | null>(null); // Note waiting to be opened
+  
+  const [showLockMethodModal, setShowLockMethodModal] = useState(false);
+  const [showCustomLockSetup, setShowCustomLockSetup] = useState(false);
 
   useEffect(() => {
     // Load Security Prefs
     const lockedPref = localStorage.getItem('security_app_lock') === 'true';
     setIsAppLockEnabled(lockedPref);
-    if(lockedPref) setIsAppLocked(true); // Lock on startup
+    
+    const secSalt = localStorage.getItem('sec_salt');
+    if (secSalt) {
+        setHasSecuritySetup(true);
+        if(lockedPref) {
+            setIsAppLocked(true); 
+        }
+    }
 
     const savedTheme = localStorage.getItem('theme') as Theme || 'classic';
     setTheme(savedTheme);
@@ -913,23 +1309,16 @@ export default function App() {
       let loadedNotes: Note[] = JSON.parse(savedNotes);
 
       // --- TRASH AUTO-DELETE LOGIC ---
-      // Remove notes that have been in trash for > 30 days
       const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
       const now = Date.now();
       
       const filteredNotes = loadedNotes.filter(note => {
         if (note.isTrashed && note.deletedAt) {
             const timeDiff = now - note.deletedAt;
-            // Return false to remove if older than 30 days
             return timeDiff <= THIRTY_DAYS_MS;
         }
-        return true; // Keep active notes or trash without timestamp (legacy support)
+        return true; 
       });
-
-      // If items were removed, log it (optional) or just update state
-      if (filteredNotes.length < loadedNotes.length) {
-          console.log(`Cleaned up ${loadedNotes.length - filteredNotes.length} expired items from trash.`);
-      }
 
       setNotes(filteredNotes);
     } else {
@@ -1011,6 +1400,7 @@ export default function App() {
         setNotes([newNote, ...notes]);
     }
     setSelectedNoteId(newNote.id);
+    setActiveNoteKey(null); // New note has no encryption yet
     setStartInEditMode(true);
     setView('EDITOR');
   };
@@ -1066,27 +1456,73 @@ export default function App() {
     }
   };
 
-  const handleToggleLock = async (id: string) => {
-      const note = activeNotes.find(n => n.id === id);
+  // Triggered from Editor settings
+  const handleLockToggleRequest = () => {
+      const note = activeNotes.find(n => n.id === selectedNoteId);
       if(!note) return;
 
-      // Authenticate before toggling lock state
-      const authenticated = await performBiometricAuth();
-      if(authenticated) {
-          if (isIncognito) {
-              setIncognitoNotes(prev => prev.map(n => n.id === id ? { ...n, isLocked: !n.isLocked } : n));
-          } else {
-              setNotes(prev => prev.map(n => n.id === id ? { ...n, isLocked: !n.isLocked } : n));
-          }
+      if (note.isLocked) {
+          // Unlocking
+          // We already have the key (activeNoteKey) since we are in the editor
+          // Just update note state to unlocked
+          const unlockedNote = { ...note, isLocked: false, lockMode: undefined, security: undefined };
+          handleUpdateNote(unlockedNote);
+          // We keep activeNoteKey because we still need it to save the DECRYPTED content (handleSave logic handles this)
+          // or rather, handleSave checks `isLocked` to decide whether to encrypt.
+          // If isLocked is false, it removes encryptionData. Perfect.
+      } else {
+          // Locking
+          setShowLockMethodModal(true);
       }
+  };
+
+  const handleSetGlobalLock = () => {
+      if (!sessionKey) {
+          alert("Global session not active. Please unlock app first.");
+          return;
+      }
+      const note = activeNotes.find(n => n.id === selectedNoteId);
+      if (note) {
+          handleUpdateNote({ ...note, isLocked: true, lockMode: 'GLOBAL' });
+          setActiveNoteKey(sessionKey);
+      }
+      setShowLockMethodModal(false);
+  };
+
+  const handleSetCustomLock = (key: CryptoKey, security: NoteSecurity) => {
+      const note = activeNotes.find(n => n.id === selectedNoteId);
+      if (note) {
+          handleUpdateNote({ ...note, isLocked: true, lockMode: 'CUSTOM', security: security });
+          setActiveNoteKey(key);
+      }
+      setShowCustomLockSetup(false);
+      setShowLockMethodModal(false);
   };
 
   const handleNoteClick = async (note: Note) => {
       if(note.isTrashed) return;
 
-      if(note.isLocked) {
-          const authenticated = await performBiometricAuth();
-          if(!authenticated) return;
+      // Note is locked OR Encrypted
+      if(note.isLocked || note.encryptedData) {
+          
+          if (note.lockMode === 'CUSTOM' && note.security) {
+              // Always require auth for custom lock
+              setPendingAuthNote(note);
+              setShowAuthModal(true);
+              return;
+          } 
+          
+          // Default/Global Lock
+          if (!sessionKey) {
+              setPendingAuthNote(note);
+              setShowAuthModal(true);
+              return; // Wait for auth
+          }
+          
+          // Have global key, open directly
+          setActiveNoteKey(sessionKey);
+      } else {
+          setActiveNoteKey(null);
       }
 
       setSelectedNoteId(note.id); 
@@ -1144,17 +1580,45 @@ export default function App() {
       localStorage.setItem('security_app_lock', enabled ? 'true' : 'false');
   };
 
-  const unlockApp = async () => {
-      const authenticated = await performBiometricAuth();
-      if(authenticated) setIsAppLocked(false);
+  const handleAuthSuccess = (key: CryptoKey) => {
+      if (isAppLocked) {
+          setSessionKey(key);
+          setIsAppLocked(false);
+      } else if (pendingAuthNote) {
+          // We were trying to open a specific note
+          if (pendingAuthNote.lockMode === 'CUSTOM') {
+              setActiveNoteKey(key); // Use the custom key derived for this note
+          } else {
+              setSessionKey(key); // We unlocked the global session
+              setActiveNoteKey(key);
+          }
+          
+          setSelectedNoteId(pendingAuthNote.id);
+          setStartInEditMode(false);
+          setView('EDITOR');
+          setPendingAuthNote(null);
+      }
+      setShowAuthModal(false);
   };
+
+  const handleGlobalSetupComplete = (key: CryptoKey, security: NoteSecurity) => {
+      setHasSecuritySetup(true);
+      setSessionKey(key);
+      localStorage.setItem('sec_salt', security.salt);
+      localStorage.setItem('sec_verifier', security.verifier);
+      // Save global length preference
+      if (security.pinLength) {
+        localStorage.setItem('sec_pin_length', security.pinLength.toString());
+      }
+      setShowSecuritySetup(false);
+  }
 
   const filteredNotes = useMemo(() => {
     const lowerQuery = searchQuery.toLowerCase();
     
     // Base filter
     let filtered = activeNotes.filter(n => 
-      (n.title.toLowerCase().includes(lowerQuery) || n.plainTextPreview.toLowerCase().includes(lowerQuery))
+      (n.title.toLowerCase().includes(lowerQuery) || n.plainTextPreview.toLowerCase().includes(lowerQuery) || (n.encryptedData && lowerQuery === ''))
     );
 
     // View specific filtering
@@ -1191,8 +1655,38 @@ export default function App() {
 
   // --- Render ---
 
+  const styles = THEME_STYLES[theme];
+
+  // Full Screen Overlays
   if (isAppLocked) {
-      return <LockScreen onUnlock={unlockApp} />;
+      return <AuthModal onUnlock={handleAuthSuccess} />;
+  }
+
+  if (showSecuritySetup) {
+      // Global Setup
+      return <SecuritySetupModal onComplete={handleGlobalSetupComplete} onCancel={() => setShowSecuritySetup(false)} />;
+  }
+  
+  if (showCustomLockSetup) {
+      // Per-Note Setup
+      return <SecuritySetupModal onComplete={handleSetCustomLock} onCancel={() => setShowCustomLockSetup(false)} />;
+  }
+
+  if (showLockMethodModal) {
+      return <LockMethodModal 
+                onSelectGlobal={handleSetGlobalLock} 
+                onSelectCustom={() => { setShowLockMethodModal(false); setShowCustomLockSetup(true); }} 
+                onCancel={() => setShowLockMethodModal(false)}
+                globalAvailable={hasSecuritySetup} 
+            />;
+  }
+  
+  if (showAuthModal) {
+      return <AuthModal 
+        onUnlock={handleAuthSuccess} 
+        onCancel={() => { setShowAuthModal(false); setPendingAuthNote(null); }} 
+        customSecurity={pendingAuthNote?.lockMode === 'CUSTOM' ? pendingAuthNote.security : undefined}
+      />;
   }
 
   if (view === 'EDITOR' && selectedNoteId) {
@@ -1207,7 +1701,8 @@ export default function App() {
                 initialEditMode={startInEditMode}
                 folders={folders}
                 theme={theme}
-                onLockToggle={handleToggleLock}
+                onLockToggle={handleLockToggleRequest}
+                encryptionKey={activeNoteKey}
             />
         );
     }
@@ -1219,21 +1714,19 @@ export default function App() {
   else if (view === 'FOLDER') viewTitle = folders.find(f => f.id === currentFolderId)?.name || "Folder";
   else if (view === 'TAG') viewTitle = `#${currentTagFilter}`;
 
-  const styles = THEME_STYLES[theme];
-
   return (
-    <div className={`min-h-screen flex justify-center ${styles.bg}`}>
-      <div className="w-full max-w-md md:max-w-3xl min-h-screen relative flex flex-col">
+    <div className={`min-h-[100dvh] flex justify-center ${styles.bg}`}>
+      <div className="w-full max-w-md md:max-w-3xl min-h-[100dvh] relative flex flex-col">
         
         {/* Incognito Banner */}
         {isIncognito && (
-            <div className="bg-purple-900 text-white text-xs text-center py-1 font-bold tracking-widest uppercase">
+            <div className="bg-purple-900 text-white text-xs text-center py-1 font-bold tracking-widest uppercase pt-[env(safe-area-inset-top)]">
                 Incognito Mode Active - Data not saved
             </div>
         )}
 
         {/* Modern Floating Search Bar Header */}
-        <div className="sticky top-0 z-30 p-4 pointer-events-none">
+        <div className="sticky top-0 z-30 pt-[calc(1rem+env(safe-area-inset-top))] px-4 pb-4 pointer-events-none">
           <div className={`pointer-events-auto shadow-md rounded-full h-12 flex items-center px-2 transition-all ${styles.searchBar} ${isIncognito ? 'ring-2 ring-purple-500' : ''}`}>
             
             <button onClick={() => setIsDrawerOpen(true)} className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-full ${styles.iconHover} ${styles.text}`}>
@@ -1308,7 +1801,7 @@ export default function App() {
             </div>
         )}
 
-        <main className="flex-1 px-4 pb-24 -mt-2">
+        <main className="flex-1 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] -mt-2">
             {filteredNotes.length === 0 ? (
                 <div className={`flex flex-col items-center justify-center h-[60vh] ${styles.secondaryText}`}>
                     <div className={`p-8 rounded-full mb-6 animate-pulse ${theme === 'neo-glass' ? 'bg-white/5' : (theme === 'vision' ? 'bg-[#141F3A]' : 'bg-gray-100 dark:bg-white/5')}`}>
@@ -1367,6 +1860,8 @@ export default function App() {
             toggleAppLock={toggleAppLockSetting}
             isIncognito={isIncognito}
             toggleIncognito={setIsIncognito}
+            hasSecuritySetup={hasSecuritySetup}
+            onSetupSecurity={() => { setIsDrawerOpen(false); setShowSecuritySetup(true); }}
         />
       </div>
     </div>

@@ -1,4 +1,16 @@
 
+export interface EncryptedData {
+  cipherText: string; // Base64
+  iv: string; // Base64
+  salt: string; // Base64
+}
+
+export interface NoteSecurity {
+  salt: string;
+  verifier: string;
+  pinLength?: number;
+}
+
 export interface Note {
   id: string;
   title: string;
@@ -18,8 +30,11 @@ export interface Note {
   deletedAt?: number;
   
   // Security Features
-  isLocked?: boolean; // Requires biometric auth to open
+  isLocked?: boolean; // Requires auth to open
+  lockMode?: 'GLOBAL' | 'CUSTOM'; // Default is GLOBAL if undefined
+  security?: NoteSecurity; // Only present if lockMode is CUSTOM
   isIncognito?: boolean; // True if created in incognito mode
+  encryptedData?: string; // Stringified JSON of EncryptedData. If present, title/content are ignored/hidden.
 }
 
 export interface Folder {
