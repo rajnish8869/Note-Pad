@@ -9,8 +9,12 @@ const paths: Record<string, string> = {
   moreVertical: "M12 12h.01M12 5h.01M12 19h.01",
   check: "M20 6L9 17l-5-5",
   trash: "M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2",
-  pin: "M22 10c-5-2-9-5-11-5s-6 3-11 5c0 0 5 1 5 10v4h12v-4c0-9 5-10 5-10z",
-  pinOff: "M2 2l20 20",
+  // Updated Pin to Push Pin style (Outline)
+  pin: "M12 2a3 3 0 0 0-3 3v7l-2 2v2h10v-2l-2-2V5a3 3 0 0 0-3-3z M12 16v6",
+  // Filled Pin for active state
+  pinFilled: "M16 12V5c0-2.21-1.79-4-4-4S8 2.79 8 5v7l-2 2v2h5v6h2v-6h5v-2l-2-2z",
+  // Updated PinOff to be a crossed-out pin (Slash style)
+  pinOff: "M12 2a3 3 0 0 0-3 3v1 M2 2l20 20 M12 12v3l-2 2v2h10v-2l-2-2v-6 M15 5a3 3 0 0 0-3-3",
   moon: "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z",
   sun: "M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z",
   cloud: "M17.5 19c2.485 0 4.5-2.015 4.5-4.5 0-2.3-1.75-4.2-4-4.45-.75-3-3.5-5.05-6.5-5.05-3.5 0-6.4 2.5-7 5.9-2.5.25-4.5 2.2-4.5 4.6 0 2.485 2.015 4.5 4.5 4.5h13z",
@@ -36,7 +40,8 @@ const paths: Record<string, string> = {
   shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
   fingerprint: "M2 12C2 6.5 6.5 2 12 2a10 10 0 0 1 8 6",
   eyeOff: "M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24M1 1l22 22",
-  incognito: "M2 12c0-3.5 2.5-6 6-6 1.5 0 2.5 1 3.5 2 1.5-1.5 2.5-2 4.5-2 3 0 5 2.5 5 6M2 12l2 2m18-2l-2 2",
+  // Updated Incognito Icon (Hat and Glasses)
+  incognito: "M20.5 10H17V9a1 1 0 0 0-1-1h-1.6a3 3 0 0 0-4.8 0H8a1 1 0 0 0-1 1v1H3.5a1.5 1.5 0 0 0 0 3h.14a4 4 0 0 0 7.72 0h1.28a4 4 0 0 0 7.72 0h.14a1.5 1.5 0 0 0 0-3zm-13 4a2 2 0 1 1 2-2 2 2 0 0 1-2 2zm9 0a2 2 0 1 1 2-2 2 2 0 0 1-2 2z",
   fileText: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8"
 };
 
@@ -45,18 +50,19 @@ interface IconProps {
   size?: number;
   className?: string;
   onClick?: (e: React.MouseEvent) => void;
+  fill?: boolean;
 }
 
-export const Icon: React.FC<IconProps> = ({ name, size = 24, className = "", onClick }) => {
+export const Icon: React.FC<IconProps> = ({ name, size = 24, className = "", onClick, fill = false }) => {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      fill="none"
+      fill={fill ? "currentColor" : "none"}
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth={fill ? "0" : "2"}
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}

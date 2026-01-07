@@ -183,10 +183,19 @@ const NoteCard: React.FC<{
   const colorClass = NOTE_COLORS[colorKey][theme];
   const styles = THEME_STYLES[theme];
 
+  // Enhanced visual style for pinned notes
+  const pinnedStyle = !isTrashView && note.isPinned 
+    ? (theme === 'neo-glass' 
+        ? 'border-yellow-200/50 shadow-[0_0_15px_rgba(255,255,255,0.15)] bg-white/15' 
+        : theme === 'vision' 
+            ? 'border-[#2F6BFF] shadow-[0_0_12px_rgba(47,107,255,0.25)]'
+            : 'border-primary-400/80 dark:border-primary-600 shadow-md ring-1 ring-primary-400/20')
+    : '';
+
   return (
     <div 
       onClick={onClick}
-      className={`${colorClass} ${styles.text} border rounded-2xl p-4 transition-all cursor-pointer relative overflow-hidden group mb-4 break-inside-avoid hover:shadow-md`}
+      className={`${colorClass} ${styles.text} border rounded-2xl p-4 transition-all cursor-pointer relative overflow-hidden group mb-4 break-inside-avoid hover:shadow-lg ${pinnedStyle}`}
     >
       <div className="flex justify-between items-start mb-2">
         {note.title && (
@@ -194,7 +203,11 @@ const NoteCard: React.FC<{
             {note.title}
             </h3>
         )}
-        {!isTrashView && note.isPinned && <Icon name="pin" size={14} className={theme === 'neo-glass' ? 'text-white' : (theme === 'vision' ? 'text-[#2F6BFF] absolute top-4 right-4' : 'text-primary-500 absolute top-4 right-4')} />}
+        {!isTrashView && note.isPinned && (
+             <div className={`absolute top-0 right-0 p-2 rounded-bl-xl ${theme === 'vision' ? 'bg-[#2F6BFF] text-white' : 'bg-primary-500 text-white'}`}>
+                 <Icon name="pinFilled" size={12} fill={true} />
+             </div>
+        )}
         {note.isLocked && <Icon name="lock" size={14} className="text-red-500 absolute top-4 right-8" />}
       </div>
       
@@ -235,9 +248,9 @@ const NoteCard: React.FC<{
       {!isTrashView && (
         <button 
             onClick={onPin}
-            className={`absolute top-2 right-2 p-2 rounded-full transition-opacity ${theme === 'neo-glass' ? 'bg-white/10 hover:bg-white/20 text-white' : (theme === 'vision' ? 'bg-[#141F3A] hover:bg-[#24345C] text-[#E6ECF5]' : 'bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 hover:text-primary-600')} ${note.isPinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+            className={`absolute bottom-2 right-2 p-2 rounded-full transition-all ${theme === 'neo-glass' ? 'bg-white/10 hover:bg-white/20 text-white' : (theme === 'vision' ? 'bg-[#141F3A] hover:bg-[#24345C] text-[#E6ECF5]' : 'bg-black/5 dark:bg-white/10 text-gray-400 dark:text-gray-500 hover:text-primary-600')} ${note.isPinned ? 'opacity-100 text-primary-500' : 'opacity-0 group-hover:opacity-100'}`}
         >
-            <Icon name={note.isPinned ? 'pinOff' : 'pin'} size={14} />
+            <Icon name={note.isPinned ? 'pinFilled' : 'pin'} size={16} fill={note.isPinned} />
         </button>
       )}
 
@@ -367,7 +380,7 @@ const Drawer: React.FC<{
              className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors ${styles.text} ${styles.iconHover} ${isIncognito ? 'bg-purple-500/10' : ''}`}
           >
              <div className="flex items-center gap-3">
-                 <Icon name="eyeOff" size={20} className={isIncognito ? 'text-purple-500' : ''}/>
+                 <Icon name="incognito" size={20} className={isIncognito ? 'text-purple-500' : ''}/>
                  <span className={isIncognito ? 'text-purple-500 font-bold' : ''}>Incognito Mode</span>
              </div>
              <div className={`w-10 h-5 rounded-full relative transition-colors ${isIncognito ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
@@ -1282,7 +1295,7 @@ export default function App() {
                 className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-bold cursor-pointer overflow-hidden ml-1 mr-1 border border-transparent ${theme === 'neo-glass' ? 'bg-white/20 text-white' : (theme === 'vision' ? 'bg-[#141F3A] text-[#2F6BFF]' : 'bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-300')}`} 
                 onClick={() => setIsDrawerOpen(true)}
             >
-             {user?.imageUrl ? <img src={user.imageUrl} className="w-full h-full object-cover" /> : (user ? user.name[0] : (isIncognito ? <Icon name="eyeOff" size={16} /> : <Icon name="user" size={16} />))}
+             {user?.imageUrl ? <img src={user.imageUrl} className="w-full h-full object-cover" /> : (user ? user.name[0] : (isIncognito ? <Icon name="incognito" size={16} /> : <Icon name="user" size={16} />))}
             </div>
 
           </div>
