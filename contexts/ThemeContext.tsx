@@ -29,6 +29,7 @@ export const THEME_STYLES: Record<Theme, {
   tagBg: string;
   tagText: string;
   buttonSecondary: string;
+  statusBarColor: string; // New property for system UI
 }> = {
   classic: {
     bg: 'bg-gray-50',
@@ -58,6 +59,7 @@ export const THEME_STYLES: Record<Theme, {
     tagBg: 'bg-gray-100',
     tagText: 'text-gray-600',
     buttonSecondary: 'bg-gray-100 hover:bg-gray-200 text-gray-900',
+    statusBarColor: '#ffffff',
   },
   dark: {
     bg: 'bg-[#121212]',
@@ -87,6 +89,7 @@ export const THEME_STYLES: Record<Theme, {
     tagBg: 'bg-white/10',
     tagText: 'text-gray-300',
     buttonSecondary: 'bg-gray-800 hover:bg-gray-700 text-gray-200',
+    statusBarColor: '#1e1e1e',
   },
   'neo-glass': {
     bg: 'bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 bg-fixed',
@@ -116,6 +119,7 @@ export const THEME_STYLES: Record<Theme, {
     tagBg: 'bg-white/20',
     tagText: 'text-white',
     buttonSecondary: 'bg-white/10 hover:bg-white/20 text-white border border-white/10',
+    statusBarColor: '#6366f1', // Indigo approx
   },
   vision: {
     bg: 'bg-[#0B132B]',
@@ -145,6 +149,7 @@ export const THEME_STYLES: Record<Theme, {
     tagBg: 'bg-[#141F3A]',
     tagText: 'text-[#7F8FB0]',
     buttonSecondary: 'bg-[#141F3A] hover:bg-[#24345C] text-[#E6ECF5] border border-[#2A3B66]',
+    statusBarColor: '#0B132B',
   }
 };
 
@@ -288,6 +293,15 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       root.classList.remove('dark');
     }
     localStorage.setItem('theme', t);
+    
+    // Update Android Status Bar Color via Meta Tag
+    let metaThemeColor = document.querySelector("meta[name=theme-color]");
+    if (!metaThemeColor) {
+        metaThemeColor = document.createElement("meta");
+        metaThemeColor.setAttribute("name", "theme-color");
+        document.head.appendChild(metaThemeColor);
+    }
+    metaThemeColor.setAttribute("content", THEME_STYLES[t].statusBarColor);
   };
 
   const handleThemeChange = (t: Theme) => {

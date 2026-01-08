@@ -3,6 +3,7 @@ import { useNotes } from '../contexts/NotesContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { NoteCard } from '../components/NoteCard';
 import { Icon } from '../components/Icon';
+import { BottomSheet } from '../components/BottomSheet';
 import { Note, ViewState } from '../types';
 import { Virtuoso } from 'react-virtuoso';
 
@@ -17,20 +18,37 @@ interface Props {
   setSelectionMode: (v: boolean) => void;
 }
 
+type FilterType = 'ALL' | 'FAVORITES' | 'LOCKED' | 'MEDIA' | 'AUDIO';
+
 export const NoteListView: React.FC<Props> = ({ 
     view, currentFolderId, onNoteClick, onMenuClick, 
     searchQuery, setSearchQuery, selectionMode, setSelectionMode 
 }) => {
   const { notes, folders, isIncognito, user, syncSuccess, isOnline, deleteNote, restoreNote, deleteForever, addNote, updateNote } = useNotes();
   const { theme, styles } = useTheme();
+  
+  // UI States
   const [layoutMode, setLayoutMode] = useState<'GRID' | 'LIST'>('GRID');
   const [sortBy, setSortBy] = useState<'UPDATED' | 'CREATED' | 'TITLE'>('UPDATED');
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const [activeFilter, setActiveFilter] = useState<FilterType>('ALL');
   
   // Selection State
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showMoveMenu, setShowMoveMenu] = useState(false);
+
+  // Greeting Logic
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good Morning";
+    if (hour < 18) return "Good Afternoon";
+    return "Good Evening";
+  }, []);
+
+  const triggerHaptic = (duration = 10) => {
+    if (navigator.vibrate) navigator.vibrate(duration);
+  };
 
   useEffect(() => {
       const handleResize = () => setWindowWidth(window.innerWidth);
@@ -61,11 +79,20 @@ export const NoteListView: React.FC<Props> = ({
       viewTitle = folder ? folder.name : "Folder";
   }
 
-  const filteredNotes = useMemo(() => {
+  // Raw Filtered Notes (Before Sorting/Splitting)
+  const rawFilteredNotes = useMemo(() => {
     const lowerQuery = searchQuery.toLowerCase();
     let filtered = notes.filter(n => 
       (n.title.toLowerCase().includes(lowerQuery) || n.plainTextPreview.toLowerCase().includes(lowerQuery) || (n.encryptedData && lowerQuery === ''))
     );
+
+    // Filter by Filter Chips
+    if (activeFilter !== 'ALL') {
+        if (activeFilter === 'FAVORITES') filtered = filtered.filter(n => n.isPinned);
+        if (activeFilter === 'LOCKED') filtered = filtered.filter(n => n.isLocked || n.encryptedData);
+        if (activeFilter === 'MEDIA') filtered = filtered.filter(n => n.content.includes('<img'));
+        if (activeFilter === 'AUDIO') filtered = filtered.filter(n => n.content.includes('<audio'));
+    }
 
     if (view === 'TRASH') {
         filtered = filtered.filter(n => n.isTrashed);
@@ -75,34 +102,75 @@ export const NoteListView: React.FC<Props> = ({
             filtered = filtered.filter(n => n.folderId === currentFolderId);
         }
     }
+    return filtered;
+  }, [notes, searchQuery, view, currentFolderId, activeFilter]);
 
-    return filtered.sort((a, b) => {
-        if (!a.isTrashed && !b.isTrashed && a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+  // Sorting Function
+  const sortNotes = (n: Note[]) => {
+      return [...n].sort((a, b) => {
         switch(sortBy) {
             case 'TITLE': return a.title.localeCompare(b.title);
             case 'CREATED': return b.createdAt - a.createdAt;
             case 'UPDATED': default: return b.updatedAt - a.updatedAt;
         }
-    });
-  }, [notes, searchQuery, view, currentFolderId, sortBy]);
+      });
+  };
 
-  // Chunk notes for virtualization rows
-  const rows = useMemo(() => {
+  // Split Logic (Pinned vs Others)
+  const { pinnedNotes, otherNotes, showPinnedSection } = useMemo(() => {
+      const shouldSplit = view !== 'TRASH' && activeFilter === 'ALL' && sortBy === 'UPDATED';
+      
+      if (shouldSplit) {
+          const pinned = sortNotes(rawFilteredNotes.filter(n => n.isPinned));
+          const others = sortNotes(rawFilteredNotes.filter(n => !n.isPinned));
+          return { 
+              pinnedNotes: pinned, 
+              otherNotes: others, 
+              showPinnedSection: pinned.length > 0 && others.length > 0 
+          };
+      }
+      
+      return { 
+          pinnedNotes: [], 
+          otherNotes: sortNotes(rawFilteredNotes), 
+          showPinnedSection: false 
+      };
+  }, [rawFilteredNotes, view, activeFilter, sortBy]);
+
+
+  // Helper to chunk data for grid
+  const chunkData = (data: Note[]) => {
       const chunks = [];
-      for (let i = 0; i < filteredNotes.length; i += numColumns) {
-          chunks.push(filteredNotes.slice(i, i + numColumns));
+      for (let i = 0; i < data.length; i += numColumns) {
+          chunks.push(data.slice(i, i + numColumns));
       }
       return chunks;
-  }, [filteredNotes, numColumns]);
+  };
+
+  const rows = useMemo(() => {
+      // If we show pinned section, we render pinned notes first, then a divider (handled in itemContent), then others
+      // However, Virtuoso needs a single list. We can inject a "Header" item or handle it via visual mapping.
+      // Simpler approach: If showing pinned section, just render pinned grid at top manually (if small enough) 
+      // or flatten list.
+      // Given personal notes scale, rendering 2 grids is okay. But Virtuoso handles window scroll well.
+      
+      if (showPinnedSection) {
+          return { pinned: chunkData(pinnedNotes), others: chunkData(otherNotes) };
+      }
+      return { pinned: [], others: chunkData(otherNotes) };
+  }, [pinnedNotes, otherNotes, showPinnedSection, numColumns]);
+
 
   const togglePin = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    triggerHaptic(10);
     const note = notes.find(n => n.id === id);
     if(note) updateNote({ ...note, isPinned: !note.isPinned });
   };
 
   const handleLongPress = (id: string) => {
       if (!selectionMode) {
+          triggerHaptic(50);
           setSelectionMode(true);
           setSelectedIds(new Set([id]));
       }
@@ -110,6 +178,7 @@ export const NoteListView: React.FC<Props> = ({
 
   const handleNoteInteraction = (note: Note) => {
       if (selectionMode) {
+          triggerHaptic(10);
           const newSet = new Set(selectedIds);
           if (newSet.has(note.id)) {
               newSet.delete(note.id);
@@ -127,16 +196,17 @@ export const NoteListView: React.FC<Props> = ({
   };
 
   const handleSelectAll = () => {
-      if (selectedIds.size === filteredNotes.length) {
+      if (selectedIds.size === rawFilteredNotes.length) {
           setSelectedIds(new Set());
       } else {
-          setSelectedIds(new Set(filteredNotes.map(n => n.id)));
+          setSelectedIds(new Set(rawFilteredNotes.map(n => n.id)));
       }
   };
 
   // Bulk Actions
   const handleBulkDelete = () => {
       const ids = Array.from(selectedIds);
+      triggerHaptic(20);
       if (view === 'TRASH') {
           if(confirm(`Permanently delete ${ids.length} notes?`)) {
               ids.forEach(id => deleteForever(id));
@@ -149,12 +219,14 @@ export const NoteListView: React.FC<Props> = ({
   };
 
   const handleBulkRestore = () => {
+      triggerHaptic(20);
       const ids = Array.from(selectedIds);
       ids.forEach(id => restoreNote(id));
       setSelectionMode(false);
   };
 
   const handleBulkPin = () => {
+      triggerHaptic(20);
       const ids = Array.from(selectedIds);
       const allPinned = ids.every(id => notes.find(n => n.id === id)?.isPinned);
       
@@ -166,6 +238,7 @@ export const NoteListView: React.FC<Props> = ({
   };
 
   const handleBulkMove = (folderId: string) => {
+      triggerHaptic(20);
       const ids = Array.from(selectedIds);
       ids.forEach(id => {
           const note = notes.find(n => n.id === id);
@@ -175,123 +248,132 @@ export const NoteListView: React.FC<Props> = ({
       setSelectionMode(false);
   };
 
+  const FilterChip = ({ type, label, icon }: { type: FilterType, label: string, icon: any }) => (
+      <button 
+        onClick={() => { setActiveFilter(type); triggerHaptic(5); }} 
+        className={`
+            flex items-center gap-2 px-4 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all duration-200 border
+            ${activeFilter === type 
+                ? (theme === 'vision' ? 'bg-[#2F6BFF] border-[#2F6BFF] text-white shadow-lg shadow-blue-500/20' : 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-transparent')
+                : `${styles.buttonSecondary} border-transparent hover:bg-gray-200 dark:hover:bg-gray-700`
+            }
+        `}
+      >
+          {icon && <Icon name={icon} size={14} fill={activeFilter === type} />}
+          {label}
+      </button>
+  );
+
   return (
     <div className="w-full max-w-md md:max-w-4xl min-h-[100dvh] relative flex flex-col">
         {isIncognito && (
-            <div className="bg-purple-900 text-white text-xs text-center py-1 font-bold tracking-widest uppercase pt-[env(safe-area-inset-top)]">
-                Incognito Mode Active - Data not saved
+            <div className="bg-purple-900 text-white text-xs text-center py-1 font-bold tracking-widest uppercase pt-[env(safe-area-inset-top)] z-50">
+                Incognito Mode Active
             </div>
         )}
 
-        {/* Header */}
-        <div className="sticky top-0 z-30 pt-[calc(1rem+env(safe-area-inset-top))] px-4 pb-4 pointer-events-none">
-          {selectionMode ? (
-              // Selection Context Header
-              <div className={`pointer-events-auto shadow-md rounded-2xl h-14 flex items-center px-4 transition-all gap-4 animate-slide-in ${styles.header} ${styles.primaryBg} bg-opacity-90`}>
-                  <button onClick={() => setSelectionMode(false)} className={`p-2 rounded-full hover:bg-black/10 ${styles.text}`}>
-                      <Icon name="x" size={24} />
-                  </button>
-                  <div className={`flex-1 font-bold text-lg ${styles.text}`}>
-                      {selectedIds.size} Selected
-                  </div>
-                  
-                  <button onClick={handleSelectAll} className={`p-2 rounded-full hover:bg-black/10 ${styles.text}`} title="Select All">
-                      <Icon name={selectedIds.size === filteredNotes.length ? "checkCircle" : "circle"} size={22} />
-                  </button>
-              </div>
-          ) : (
-              // Standard Search Header
-              <div className={`pointer-events-auto shadow-md rounded-full h-12 flex items-center px-2 transition-all ${styles.searchBar} ${isIncognito ? 'ring-2 ring-purple-500' : ''}`}>
-                <button onClick={onMenuClick} className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-full ${styles.iconHover} ${styles.text}`}>
-                  <Icon name="menu" size={24} />
-                </button>
-                <div className="flex-1 flex items-center px-2 min-w-0">
+        {/* --- Modern Header Section --- */}
+        <header className={`pt-[calc(1.5rem+env(safe-area-inset-top))] px-5 pb-2 flex flex-col gap-5 z-20`}>
+             <div className="flex justify-between items-start">
+                 <div>
+                     <p className={`text-sm font-medium opacity-60 uppercase tracking-wide mb-1 ${styles.secondaryText}`}>
+                         {greeting},
+                     </p>
+                     <h1 className={`text-3xl font-bold leading-tight ${styles.text}`}>
+                         {user ? user.name.split(' ')[0] : 'Guest'}
+                     </h1>
+                 </div>
+                 <button onClick={onMenuClick} className={`relative w-12 h-12 rounded-full flex items-center justify-center overflow-hidden border-2 transition-all active:scale-95 shadow-sm ${theme === 'neo-glass' ? 'border-white/20 bg-white/10' : 'border-white dark:border-gray-700 bg-gray-100 dark:bg-gray-800'}`}>
+                    {user?.imageUrl ? <img src={user.imageUrl} className="w-full h-full object-cover" /> : <Icon name="user" size={24} className={styles.secondaryText} />}
+                     {!isOnline && (
+                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-red-500 border-2 border-white dark:border-gray-900 rounded-full"></div>
+                     )}
+                 </button>
+             </div>
+
+             {/* Search Bar */}
+             <div className="flex gap-3">
+                 <div className={`flex-1 h-14 rounded-2xl flex items-center px-4 transition-all shadow-sm ${theme === 'neo-glass' ? 'bg-black/20 border border-white/10' : 'bg-white dark:bg-[#1e1e1e] border border-gray-100 dark:border-gray-800'}`}>
+                    <Icon name="search" size={20} className={styles.secondaryText} />
                     <input 
                       type="text" 
                       placeholder={`Search ${viewTitle}...`}
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className={`w-full bg-transparent border-none focus:ring-0 text-base ${styles.searchBarText} ${styles.searchBarPlaceholder}`}
+                      className={`w-full bg-transparent border-none focus:ring-0 text-base px-3 h-full ${styles.text} placeholder:text-gray-400`}
                     />
-                </div>
-
-                {!isOnline && (
-                    <div className="mr-2 text-gray-400" title="Offline">
-                        <Icon name="cloudOff" size={20} />
-                    </div>
-                )}
-
-                {view === 'LIST' && (
-                    <>
-                        <button onClick={() => setLayoutMode(prev => prev === 'GRID' ? 'LIST' : 'GRID')} className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-full ${styles.iconHover} ${styles.text}`}>
-                            <Icon name={layoutMode === 'GRID' ? 'viewList' : 'grid'} size={22} />
+                    {searchQuery && (
+                        <button onClick={() => setSearchQuery('')} className={styles.secondaryText}>
+                            <Icon name="x" size={18} />
                         </button>
-                        <div className="relative">
-                            <button onClick={() => setIsSortMenuOpen(!isSortMenuOpen)} className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-full transition-colors ${isSortMenuOpen ? styles.iconHover : `${styles.iconHover} ${styles.text}`}`}>
-                                 <Icon name="sort" size={22} />
-                            </button>
-                            {isSortMenuOpen && (
-                                <>
-                                <div className={`fixed inset-0 z-30 ${styles.modalOverlay}`} onClick={() => setIsSortMenuOpen(false)}></div>
-                                <div className={`absolute top-12 right-0 w-48 shadow-xl rounded-xl border py-2 z-40 animate-slide-up origin-top-right ${styles.cardBase} ${styles.cardBorder}`}>
-                                    <div className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider ${styles.secondaryText}`}>Sort By</div>
-                                    <button onClick={() => { setSortBy('UPDATED'); setIsSortMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm flex items-center justify-between ${sortBy === 'UPDATED' ? `${styles.primaryText} font-medium` : styles.text}`}>Last Modified</button>
-                                    <button onClick={() => { setSortBy('CREATED'); setIsSortMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm flex items-center justify-between ${sortBy === 'CREATED' ? `${styles.primaryText} font-medium` : styles.text}`}>Date Created</button>
-                                    <button onClick={() => { setSortBy('TITLE'); setIsSortMenuOpen(false); }} className={`w-full text-left px-4 py-2 text-sm flex items-center justify-between ${sortBy === 'TITLE' ? `${styles.primaryText} font-medium` : styles.text}`}>Title (A-Z)</button>
-                                </div>
-                                </>
-                            )}
-                        </div>
-                    </>
-                )}
+                    )}
+                 </div>
+                 <button 
+                    onClick={() => { setIsSortMenuOpen(true); triggerHaptic(10); }}
+                    className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm transition-all active:scale-95 ${theme === 'neo-glass' ? 'bg-white/10 border border-white/10' : 'bg-white dark:bg-[#1e1e1e] border border-gray-100 dark:border-gray-800'}`}
+                 >
+                     <Icon name="sort" size={22} className={styles.text} />
+                 </button>
+             </div>
 
-                <div className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-bold cursor-pointer overflow-hidden ml-1 mr-1 border border-transparent ${theme === 'neo-glass' ? 'bg-white/20 text-white' : 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300'}`} onClick={onMenuClick}>
-                 {user?.imageUrl ? <img src={user.imageUrl} className="w-full h-full object-cover" /> : (user ? user.name[0] : <Icon name={isIncognito ? "incognito" : "user"} size={16} />)}
+             {/* Horizontal Filter Chips */}
+             {view === 'LIST' && (
+                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 mask-linear-fade-right -mx-5 px-5">
+                    <FilterChip type="ALL" label="All" icon={null} />
+                    <FilterChip type="FAVORITES" label="Favorites" icon="star" />
+                    <FilterChip type="LOCKED" label="Locked" icon="lock" />
+                    <FilterChip type="MEDIA" label="Media" icon="image" />
+                    <FilterChip type="AUDIO" label="Audio" icon="mic" />
                 </div>
-              </div>
-          )}
-        </div>
-
+             )}
+        </header>
+        
+        {/* --- Sync Indicator --- */}
         {syncSuccess && (
-            <div className="fixed top-24 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur text-white px-4 py-2 rounded-full text-sm shadow-lg z-30 animate-slide-up flex items-center gap-2">
-                <Icon name="check" size={16} className="text-green-400" /> Synced
+            <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-green-500 text-white px-4 py-1.5 rounded-full text-xs font-bold shadow-lg z-30 animate-slide-up flex items-center gap-2">
+                <Icon name="check" size={14} /> Synced
             </div>
         )}
 
-        <main className="flex-1 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] -mt-2">
+        {/* --- Main Content --- */}
+        <main className="flex-1 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] mt-2">
             {view === 'TRASH' && (
-                <div className={`mb-4 py-3 px-4 rounded-xl text-xs text-center font-medium ${theme === 'neo-glass' ? 'bg-white/10 text-white/70 border border-white/10' : (theme === 'dark' || theme === 'vision' ? 'bg-white/5 text-gray-400' : 'bg-gray-100 text-gray-500')}`}>
-                    Items in Trash are permanently deleted after 30 days
+                <div className={`mb-6 py-3 px-4 rounded-xl text-xs text-center font-medium ${theme === 'neo-glass' ? 'bg-white/10 text-white/70 border border-white/10' : (theme === 'dark' || theme === 'vision' ? 'bg-white/5 text-gray-400' : 'bg-gray-100 text-gray-500')}`}>
+                    Trash is emptied after 30 days.
                 </div>
             )}
 
-            {filteredNotes.length === 0 ? (
-                <div className={`flex flex-col items-center justify-center h-[60vh] ${styles.secondaryText}`}>
-                    <div className={`p-8 rounded-full mb-6 ${styles.tagBg}`}>
-                        <Icon name={searchQuery ? 'search' : 'fileText'} size={64} className="opacity-40" />
+            {view === 'FOLDER' && (
+                 <div className="flex items-center gap-2 mb-4 opacity-60">
+                     <Icon name="folder" size={16} className={styles.text} />
+                     <span className={`text-sm font-medium ${styles.text}`}>{viewTitle}</span>
+                 </div>
+            )}
+
+            {rawFilteredNotes.length === 0 ? (
+                <div className={`flex flex-col items-center justify-center pt-20 ${styles.secondaryText}`}>
+                    <div className={`p-8 rounded-[2rem] mb-6 ${theme === 'neo-glass' ? 'bg-white/5' : 'bg-gray-100 dark:bg-gray-800'}`}>
+                        <Icon name={searchQuery ? 'search' : 'fileText'} size={48} className="opacity-40" />
                     </div>
-                    <p className="font-bold text-lg">{searchQuery ? "No results found" : "No notes here"}</p>
+                    <p className="font-bold text-lg">{searchQuery ? "No results found" : "No notes yet"}</p>
+                    <p className="text-xs opacity-60 mt-2">{searchQuery ? "Try a different keyword" : "Tap + to create one"}</p>
                 </div>
             ) : (
-                <Virtuoso 
-                    useWindowScroll
-                    data={rows}
-                    className="w-full"
-                    itemContent={(index, rowNotes) => (
-                        <div 
-                            className={`grid gap-4 mb-4 ${
-                                numColumns === 1 ? 'grid-cols-1' : (numColumns === 2 ? 'grid-cols-2' : 'grid-cols-3')
-                            }`}
-                        >
-                            {rowNotes.map(note => (
+                <>
+                {/* We use standard mapping for Pinned section to allow separation, then Virtuoso for the rest or standard for all if split. 
+                    Given the structure, if 'showPinnedSection' is true, we display the Pinned grid first.
+                */}
+                {showPinnedSection && (
+                    <div className="mb-8 animate-slide-in">
+                        <div className={`text-xs font-bold uppercase tracking-wider mb-3 px-1 opacity-50 ${styles.text}`}>Pinned</div>
+                        <div className={`grid gap-3 ${numColumns === 1 ? 'grid-cols-1' : (numColumns === 2 ? 'grid-cols-2' : 'grid-cols-3')}`}>
+                            {pinnedNotes.map(note => (
                                 <NoteCard 
                                     key={note.id} 
                                     note={note} 
                                     onClick={() => handleNoteInteraction(note)}
                                     onPin={(e) => togglePin(e, note.id)}
-                                    onRestore={(e) => { e.stopPropagation(); restoreNote(note.id); }}
-                                    onDeleteForever={(e) => { e.stopPropagation(); deleteForever(note.id); }}
-                                    isTrashView={!!note.isTrashed}
+                                    isTrashView={false}
                                     selectionMode={selectionMode}
                                     isSelected={selectedIds.has(note.id)}
                                     onLongPress={handleLongPress}
@@ -299,64 +381,135 @@ export const NoteListView: React.FC<Props> = ({
                                 />
                             ))}
                         </div>
-                    )}
-                />
+                         <div className={`text-xs font-bold uppercase tracking-wider mt-6 mb-3 px-1 opacity-50 ${styles.text}`}>Others</div>
+                    </div>
+                )}
+                
+                {/* The Main List (Others or All) */}
+                {rows.others.length > 0 ? (
+                    <Virtuoso 
+                        useWindowScroll
+                        data={rows.others}
+                        className="w-full"
+                        itemContent={(index, rowNotes) => (
+                            <div 
+                                className={`grid gap-3 mb-3 ${
+                                    numColumns === 1 ? 'grid-cols-1' : (numColumns === 2 ? 'grid-cols-2' : 'grid-cols-3')
+                                }`}
+                            >
+                                {rowNotes.map(note => (
+                                    <NoteCard 
+                                        key={note.id} 
+                                        note={note} 
+                                        onClick={() => handleNoteInteraction(note)}
+                                        onPin={(e) => togglePin(e, note.id)}
+                                        onRestore={(e) => { e.stopPropagation(); restoreNote(note.id); }}
+                                        onDeleteForever={(e) => { e.stopPropagation(); deleteForever(note.id); }}
+                                        isTrashView={!!note.isTrashed}
+                                        selectionMode={selectionMode}
+                                        isSelected={selectedIds.has(note.id)}
+                                        onLongPress={handleLongPress}
+                                        className="h-full"
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    />
+                ) : (
+                    !showPinnedSection && (
+                        <div className={`text-center py-10 opacity-50 ${styles.text}`}>No other notes</div>
+                    )
+                )}
+                </>
             )}
         </main>
 
-        {/* Bottom Action Bar for Selection Mode */}
+        {/* --- Floating Selection Bar (Google Photos Style) --- */}
         {selectionMode && (
-            <div className={`fixed bottom-6 left-4 right-4 z-40 rounded-2xl shadow-2xl p-3 flex items-center justify-around animate-slide-up ${styles.cardBase} ${styles.cardBorder} border`}>
-                {view === 'TRASH' ? (
-                    <>
-                        <button onClick={handleBulkRestore} className={`flex flex-col items-center gap-1 p-2 ${styles.successText}`}>
-                            <Icon name="restore" size={24} />
-                            <span className="text-[10px] font-medium">Restore</span>
+            <div className="fixed bottom-6 left-4 right-4 z-40 animate-slide-up">
+                 <div className={`rounded-full shadow-2xl p-2 px-6 flex items-center justify-between backdrop-blur-md ${theme === 'neo-glass' ? 'bg-black/60 border border-white/20' : 'bg-white/90 dark:bg-[#2c2c2c]/90 border border-gray-200 dark:border-gray-700'}`}>
+                    
+                    <button onClick={() => setSelectionMode(false)} className={`p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors`}>
+                        <Icon name="x" size={24} className={styles.text} />
+                    </button>
+                    
+                    <span className={`text-sm font-bold ${styles.text}`}>{selectedIds.size} Selected</span>
+                    
+                    <div className="h-6 w-px bg-gray-300 dark:bg-gray-600 mx-2"></div>
+
+                    <div className="flex items-center gap-1">
+                        {view === 'TRASH' ? (
+                            <>
+                                <button onClick={handleBulkRestore} className={`p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 ${styles.successText}`} title="Restore">
+                                    <Icon name="restore" size={22} />
+                                </button>
+                                <button onClick={handleBulkDelete} className={`p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 ${styles.dangerText}`} title="Delete">
+                                    <Icon name="trash" size={22} />
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <button onClick={() => setShowMoveMenu(true)} className={`p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 ${styles.text}`} title="Move">
+                                    <Icon name="folder" size={22} />
+                                </button>
+                                <button onClick={handleBulkPin} className={`p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 ${styles.text}`} title="Pin">
+                                    <Icon name="pin" size={22} />
+                                </button>
+                                <button onClick={handleBulkDelete} className={`p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 ${styles.dangerText}`} title="Trash">
+                                    <Icon name="trash" size={22} />
+                                </button>
+                            </>
+                        )}
+                        <button onClick={handleSelectAll} className={`p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 ${styles.text} ml-2`} title="Select All">
+                           <Icon name={selectedIds.size === rawFilteredNotes.length ? "checkCircle" : "circle"} size={20} />
                         </button>
-                        <button onClick={handleBulkDelete} className={`flex flex-col items-center gap-1 p-2 ${styles.dangerText}`}>
-                            <Icon name="trash" size={24} />
-                            <span className="text-[10px] font-medium">Delete</span>
-                        </button>
-                    </>
-                ) : (
-                    <>
-                         <button onClick={handleBulkDelete} className={`flex flex-col items-center gap-1 p-2 ${styles.dangerText}`}>
-                            <Icon name="trash" size={24} />
-                            <span className="text-[10px] font-medium">Trash</span>
-                        </button>
-                        <button onClick={() => setShowMoveMenu(true)} className={`flex flex-col items-center gap-1 p-2 ${styles.text}`}>
-                            <Icon name="folder" size={24} />
-                            <span className="text-[10px] font-medium">Move</span>
-                        </button>
-                        <button onClick={handleBulkPin} className={`flex flex-col items-center gap-1 p-2 ${styles.text}`}>
-                            <Icon name="pin" size={24} />
-                            <span className="text-[10px] font-medium">Pin</span>
-                        </button>
-                    </>
-                )}
+                    </div>
+                 </div>
             </div>
         )}
 
-        {/* Move to Folder Modal */}
-        {showMoveMenu && (
-             <div className={`fixed inset-0 z-50 flex items-center justify-center ${styles.modalOverlay} p-6 animate-slide-in`} onClick={() => setShowMoveMenu(false)}>
-                 <div className={`w-full max-w-sm rounded-2xl p-4 shadow-xl border ${styles.cardBase} ${styles.cardBorder}`} onClick={e => e.stopPropagation()}>
-                     <h3 className={`font-bold mb-4 px-2 ${styles.text}`}>Move to Folder</h3>
-                     <div className="max-h-[60vh] overflow-y-auto space-y-2">
-                         <button onClick={() => handleBulkMove("")} className={`w-full flex items-center gap-3 p-3 rounded-xl border ${styles.buttonSecondary} border-transparent`}>
-                             <Icon name="folder" size={20} className={styles.secondaryText} />
-                             <span className={styles.text}>All Notes (Remove Folder)</span>
-                         </button>
-                         {folders.map(f => (
-                             <button key={f.id} onClick={() => handleBulkMove(f.id)} className={`w-full flex items-center gap-3 p-3 rounded-xl border ${styles.buttonSecondary} border-transparent`}>
-                                 <Icon name="folder" size={20} className={styles.primaryText} />
-                                 <span className={styles.text}>{f.name}</span>
-                             </button>
-                         ))}
-                     </div>
+        {/* --- Bottom Sheets (Modern Popups) --- */}
+
+        {/* Sort Menu */}
+        <BottomSheet isOpen={isSortMenuOpen} onClose={() => setIsSortMenuOpen(false)} title="Sort & Layout">
+            <div className="space-y-1">
+                 <button onClick={() => { setSortBy('UPDATED'); setIsSortMenuOpen(false); }} className={`w-full flex items-center justify-between p-4 rounded-xl ${sortBy === 'UPDATED' ? styles.activeItem : styles.iconHover}`}>
+                     <span className={styles.text}>Last Modified</span>
+                     {sortBy === 'UPDATED' && <Icon name="check" size={20} className={styles.primaryText} />}
+                 </button>
+                 <button onClick={() => { setSortBy('CREATED'); setIsSortMenuOpen(false); }} className={`w-full flex items-center justify-between p-4 rounded-xl ${sortBy === 'CREATED' ? styles.activeItem : styles.iconHover}`}>
+                     <span className={styles.text}>Date Created</span>
+                     {sortBy === 'CREATED' && <Icon name="check" size={20} className={styles.primaryText} />}
+                 </button>
+                 <button onClick={() => { setSortBy('TITLE'); setIsSortMenuOpen(false); }} className={`w-full flex items-center justify-between p-4 rounded-xl ${sortBy === 'TITLE' ? styles.activeItem : styles.iconHover}`}>
+                     <span className={styles.text}>Title (A-Z)</span>
+                     {sortBy === 'TITLE' && <Icon name="check" size={20} className={styles.primaryText} />}
+                 </button>
+                 
+                 <div className={`h-px my-2 ${styles.divider}`}></div>
+                 
+                 <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
+                     <button onClick={() => setLayoutMode('GRID')} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${layoutMode === 'GRID' ? `${styles.cardBase} shadow-sm ${styles.text}` : `${styles.secondaryText}`}`}>Grid</button>
+                     <button onClick={() => setLayoutMode('LIST')} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${layoutMode === 'LIST' ? `${styles.cardBase} shadow-sm ${styles.text}` : `${styles.secondaryText}`}`}>List</button>
                  </div>
-             </div>
-        )}
+            </div>
+        </BottomSheet>
+
+        {/* Move Menu */}
+        <BottomSheet isOpen={showMoveMenu} onClose={() => setShowMoveMenu(false)} title="Move to Folder">
+            <div className="space-y-2">
+                <button onClick={() => handleBulkMove("")} className={`w-full flex items-center gap-3 p-4 rounded-xl border ${styles.buttonSecondary} border-transparent`}>
+                    <div className={`p-2 rounded-full ${styles.tagBg}`}><Icon name="folder" size={20} className={styles.secondaryText} /></div>
+                    <span className={styles.text}>All Notes (Remove Folder)</span>
+                </button>
+                {folders.map(f => (
+                    <button key={f.id} onClick={() => handleBulkMove(f.id)} className={`w-full flex items-center gap-3 p-4 rounded-xl border ${styles.buttonSecondary} border-transparent`}>
+                        <div className={`p-2 rounded-full ${styles.primaryBg}`}><Icon name="folder" size={20} className={styles.primaryText} /></div>
+                        <span className={styles.text}>{f.name}</span>
+                    </button>
+                ))}
+            </div>
+        </BottomSheet>
     </div>
   );
 };

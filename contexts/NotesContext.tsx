@@ -92,7 +92,8 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             if (savedFolders) setFolders(savedFolders);
             
             // Init Drive (async)
-            driveService.init("YOUR_API_KEY", "YOUR_CLIENT_ID")
+            // Note: API KEY is left as placeholder as it was not provided in the update request
+            driveService.init("YOUR_API_KEY", "208175085130-iobgi82bd5dqi1n7pu9udt11ie2h92bb.apps.googleusercontent.com")
                 .catch(e => console.warn("Drive Init Error:", e));
                 
         } catch (e) {

@@ -11,11 +11,19 @@ interface Props {
 
 export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
   const { theme, setTheme, styles } = useTheme();
-  const { user, login, logout, isSyncing, sync, isIncognito, toggleIncognito } = useNotes();
-  const { isAppLocked, isAppLockEnabled, toggleAppLock, hasSecuritySetup } = useSecurity();
+  const { user, login, logout, isSyncing, sync, syncSuccess, isIncognito, toggleIncognito } = useNotes();
+  const { isAppLockEnabled, toggleAppLock, hasSecuritySetup } = useSecurity();
   
+  // Helper for Toggle Switch
+  const Toggle = ({ checked }: { checked: boolean }) => (
+    <div className={`w-11 h-6 rounded-full relative transition-colors duration-200 ${checked ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
+        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-md transition-transform duration-200 ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
+    </div>
+  );
+
   return (
     <div className={`fixed inset-0 z-50 flex flex-col ${styles.bg} animate-slide-in`}>
+      {/* Header */}
       <div className={`flex items-center gap-4 p-4 pt-[calc(1rem+env(safe-area-inset-top))] ${styles.header}`}>
         <button onClick={onBack} className={`p-2 rounded-full ${styles.iconHover} ${styles.text}`}>
            <Icon name="arrowLeft" size={24} />
@@ -23,85 +31,164 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
         <h1 className={`text-xl font-bold ${styles.text}`}>Settings</h1>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
-        <section>
-          <h2 className={`text-xs font-bold uppercase tracking-wider mb-3 px-2 ${styles.secondaryText}`}>Account</h2>
-          <div className={`rounded-2xl p-4 border ${styles.cardBase} ${styles.cardBorder}`}>
-             <div className="flex items-center gap-4 mb-4">
-                <div className={`w-16 h-16 rounded-full flex items-center justify-center overflow-hidden ${styles.tagBg} ${styles.secondaryText}`}>
-                   {user?.imageUrl ? <img src={user.imageUrl} className="w-full h-full object-cover" /> : <Icon name="user" size={32} />}
-                </div>
-                <div>
-                   <div className={`font-bold text-lg ${styles.text}`}>{user?.name || "Guest"}</div>
-                   <div className={`text-sm ${styles.secondaryText}`}>{user?.email || "Not signed in"}</div>
-                </div>
-             </div>
-             
-             {user ? (
-               <button onClick={logout} className={`w-full py-3 rounded-xl border ${styles.dangerText} border-red-500/30 ${styles.dangerBg} font-medium transition-colors`}>Sign Out</button>
-             ) : (
-               <button onClick={login} className={`w-full py-3 rounded-xl font-medium ${styles.fab} text-white`}>Sign In with Google</button>
-             )}
-          </div>
-        </section>
-
-        <section>
-          <h2 className={`text-xs font-bold uppercase tracking-wider mb-3 px-2 ${styles.secondaryText}`}>Appearance</h2>
-          <div className={`rounded-2xl p-4 border ${styles.cardBase} ${styles.cardBorder}`}>
-             <div className="grid grid-cols-2 gap-3">
-                 {['classic', 'dark', 'neo-glass', 'vision'].map(t => (
-                     <button key={t} onClick={() => setTheme(t as any)} className={`p-3 rounded-xl border text-left transition-all flex flex-col gap-2 ${theme === t ? `${styles.primaryBg} ${styles.primaryText} border-blue-500/50` : `${styles.buttonSecondary} border-transparent`}`}>
-                        <span className={`text-sm font-medium ${theme === t ? styles.primaryText : styles.text}`}>{t.charAt(0).toUpperCase() + t.slice(1)}</span>
-                     </button>
-                 ))}
-             </div>
-          </div>
-        </section>
-
-        <section>
-          <h2 className={`text-xs font-bold uppercase tracking-wider mb-3 px-2 ${styles.secondaryText}`}>Security</h2>
-          <div className={`rounded-2xl overflow-hidden border ${styles.cardBase} ${styles.cardBorder}`}>
-             <div onClick={hasSecuritySetup ? () => toggleAppLock(!isAppLockEnabled) : onSetupSecurity} className={`p-4 flex items-center justify-between cursor-pointer border-b ${styles.divider}`}>
-                <div className="flex items-center gap-3">
-                   <div className={`p-2 rounded-lg ${styles.primaryBg} ${styles.primaryText}`}><Icon name="lock" size={20} /></div>
-                   <div>
-                      <div className={`font-medium ${styles.text}`}>App Lock</div>
-                      <div className={`text-xs ${styles.secondaryText}`}>Require PIN to open app</div>
-                   </div>
-                </div>
-                <div className={`w-12 h-6 rounded-full relative transition-colors ${isAppLockEnabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-sm ${isAppLockEnabled ? 'left-7' : 'left-1'}`} />
-                </div>
-             </div>
-             <div onClick={() => toggleIncognito(!isIncognito)} className={`p-4 flex items-center justify-between cursor-pointer`}>
-                <div className="flex items-center gap-3">
-                   <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500"><Icon name="incognito" size={20} /></div>
-                   <div>
-                      <div className={`font-medium ${styles.text}`}>Incognito Mode</div>
-                      <div className={`text-xs ${styles.secondaryText}`}>Don't save notes</div>
-                   </div>
-                </div>
-                <div className={`w-12 h-6 rounded-full relative transition-colors ${isIncognito ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-sm ${isIncognito ? 'left-7' : 'left-1'}`} />
-                </div>
-             </div>
-          </div>
-        </section>
+      <div className="flex-1 overflow-y-auto pb-[calc(2rem+env(safe-area-inset-bottom))]">
         
-        <section>
-          <h2 className={`text-xs font-bold uppercase tracking-wider mb-3 px-2 ${styles.secondaryText}`}>Data</h2>
-          <div className={`rounded-2xl p-4 border ${styles.cardBase} ${styles.cardBorder}`}>
-              <button onClick={sync} disabled={isSyncing || isIncognito} className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors ${isIncognito ? 'opacity-50' : styles.iconHover}`}>
-                 <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg ${styles.successText} bg-green-500/10`}><Icon name={isSyncing ? "refresh" : "cloud"} size={20} className={isSyncing ? "animate-spin" : ""} /></div>
-                    <div className="text-left">
-                       <div className={`font-medium ${styles.text}`}>Sync with Drive</div>
-                       <div className={`text-xs ${styles.secondaryText}`}>{isSyncing ? "Syncing..." : "Tap to sync now"}</div>
+        {/* Profile Card */}
+        <div className="p-4">
+            <div className={`rounded-3xl p-6 border shadow-sm relative overflow-hidden ${styles.cardBase} ${styles.cardBorder}`}>
+                <div className="relative z-10 flex flex-col items-center text-center">
+                    <div className={`w-20 h-20 rounded-full mb-4 flex items-center justify-center overflow-hidden border-4 ${styles.cardBase} ${styles.cardBorder} shadow-lg`}>
+                        {user?.imageUrl ? (
+                            <img src={user.imageUrl} className="w-full h-full object-cover" alt="Profile" />
+                        ) : (
+                            <div className={`w-full h-full flex items-center justify-center ${styles.tagBg}`}>
+                                <Icon name="user" size={32} className={styles.secondaryText} />
+                            </div>
+                        )}
+                    </div>
+                    <h2 className={`text-lg font-bold ${styles.text}`}>{user?.name || "Guest User"}</h2>
+                    <p className={`text-sm mb-6 ${styles.secondaryText}`}>{user?.email || "Sign in to sync your notes"}</p>
+                    
+                    {user ? (
+                         <button 
+                            onClick={logout}
+                            className={`px-6 py-2 rounded-full text-sm font-bold border transition-all ${styles.buttonSecondary} border-gray-200 dark:border-gray-700`}
+                         >
+                            Sign Out
+                         </button>
+                    ) : (
+                        <button 
+                            onClick={login}
+                            className={`px-8 py-3 rounded-full text-sm font-bold text-white shadow-lg bg-blue-600 hover:bg-blue-700`}
+                        >
+                            Sign In with Google
+                        </button>
+                    )}
+                </div>
+                
+                {/* Decorative Background Elements */}
+                <div className={`absolute top-0 left-0 w-full h-24 opacity-10 ${theme === 'neo-glass' ? 'bg-white' : 'bg-blue-500'}`} />
+            </div>
+        </div>
+
+        {/* Sync Status (if logged in) */}
+        {user && (
+            <div className="px-4 mb-2">
+                 <div 
+                    onClick={() => !isSyncing && sync()}
+                    className={`rounded-2xl p-4 flex items-center justify-between border cursor-pointer active:scale-[0.99] transition-all ${styles.cardBase} ${styles.cardBorder}`}
+                 >
+                    <div className="flex items-center gap-4">
+                        <div className={`p-2.5 rounded-full ${syncSuccess ? 'bg-green-100 text-green-600' : (isSyncing ? 'bg-blue-100 text-blue-600' : `${styles.tagBg} ${styles.secondaryText}`)}`}>
+                            <Icon name={syncSuccess ? "check" : "refresh"} size={20} className={isSyncing ? "animate-spin" : ""} />
+                        </div>
+                        <div>
+                            <div className={`font-semibold text-sm ${styles.text}`}>Cloud Sync</div>
+                            <div className={`text-xs ${styles.secondaryText}`}>
+                                {isSyncing ? "Syncing changes..." : (syncSuccess ? "Synced just now" : "Tap to sync")}
+                            </div>
+                        </div>
                     </div>
                  </div>
-              </button>
-          </div>
-        </section>
+            </div>
+        )}
+
+        {/* Appearance */}
+        <div className="mt-2">
+            <h3 className={`px-6 mb-2 text-xs font-bold uppercase tracking-wider opacity-60 ${styles.text}`}>Appearance</h3>
+            <div className={`mx-4 rounded-3xl overflow-hidden border ${styles.cardBase} ${styles.cardBorder}`}>
+                <div className="grid grid-cols-2 sm:grid-cols-2 divide-x divide-y dark:divide-gray-800 border-gray-100">
+                     {[
+                         { id: 'classic', label: 'Classic', icon: 'sun', bg: 'bg-gray-100' },
+                         { id: 'dark', label: 'Dark', icon: 'moon', bg: 'bg-gray-900' },
+                         { id: 'neo-glass', label: 'Neo', icon: 'grid', bg: 'bg-gradient-to-br from-indigo-500 to-pink-500' },
+                         { id: 'vision', label: 'Vision', icon: 'eyeOff', bg: 'bg-[#0B132B]' }
+                     ].map((t: any) => (
+                        <button 
+                            key={t.id}
+                            onClick={() => setTheme(t.id)}
+                            className={`p-4 flex flex-col items-center gap-3 transition-colors ${theme === t.id ? 'bg-blue-500/5' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+                        >
+                            <div className={`w-10 h-10 rounded-full shadow-sm border border-black/10 flex items-center justify-center ${t.bg}`}>
+                                <Icon name={t.icon} size={18} className="text-white mix-blend-overlay" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className={`text-sm font-medium ${theme === t.id ? 'text-blue-600 dark:text-blue-400' : styles.text}`}>{t.label}</span>
+                                {theme === t.id && <Icon name="check" size={14} className="text-blue-600 dark:text-blue-400" />}
+                            </div>
+                        </button>
+                     ))}
+                </div>
+            </div>
+        </div>
+
+        {/* Security & Privacy */}
+        <div className="mt-6">
+            <h3 className={`px-6 mb-2 text-xs font-bold uppercase tracking-wider opacity-60 ${styles.text}`}>Privacy</h3>
+            <div className={`mx-4 rounded-3xl overflow-hidden border divide-y ${styles.cardBase} ${styles.cardBorder} ${styles.divider}`}>
+                
+                {/* App Lock */}
+                <div 
+                    onClick={hasSecuritySetup ? () => toggleAppLock(!isAppLockEnabled) : onSetupSecurity}
+                    className="p-4 flex items-center justify-between cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                >
+                    <div className="flex items-center gap-4">
+                        <div className={`p-2 rounded-xl ${styles.tagBg}`}>
+                            <Icon name="lock" size={20} className={styles.text} />
+                        </div>
+                        <div>
+                            <div className={`font-semibold text-sm ${styles.text}`}>App Lock</div>
+                            <div className={`text-xs opacity-70 ${styles.secondaryText}`}>{hasSecuritySetup ? "Require PIN on launch" : "Setup PIN"}</div>
+                        </div>
+                    </div>
+                    <Toggle checked={isAppLockEnabled} />
+                </div>
+
+                {/* Change PIN (Only if setup) */}
+                {hasSecuritySetup && (
+                    <div 
+                        onClick={onSetupSecurity}
+                        className="p-4 flex items-center justify-between cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                    >
+                         <div className="flex items-center gap-4">
+                            <div className={`p-2 rounded-xl ${styles.tagBg}`}>
+                                <Icon name="shield" size={20} className={styles.text} />
+                            </div>
+                            <div className={`font-semibold text-sm ${styles.text}`}>Change PIN</div>
+                        </div>
+                        <Icon name="chevronDown" size={16} className={`-rotate-90 opacity-30 ${styles.text}`} />
+                    </div>
+                )}
+
+                {/* Incognito */}
+                <div 
+                    onClick={() => toggleIncognito(!isIncognito)}
+                    className="p-4 flex items-center justify-between cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                >
+                    <div className="flex items-center gap-4">
+                        <div className={`p-2 rounded-xl ${isIncognito ? 'bg-purple-100 dark:bg-purple-900/30' : styles.tagBg}`}>
+                            <Icon name="incognito" size={20} className={isIncognito ? 'text-purple-600 dark:text-purple-400' : styles.text} />
+                        </div>
+                        <div>
+                            <div className={`font-semibold text-sm ${styles.text}`}>Incognito Mode</div>
+                            <div className={`text-xs opacity-70 ${styles.secondaryText}`}>Don't save new notes</div>
+                        </div>
+                    </div>
+                    <Toggle checked={isIncognito} />
+                </div>
+
+            </div>
+        </div>
+
+        {/* About / Footer */}
+        <div className="mt-8 mb-4 text-center">
+            <div className={`w-12 h-12 mx-auto mb-3 rounded-2xl flex items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg text-white`}>
+                <Icon name="cloud" size={24} />
+            </div>
+            <h4 className={`font-bold ${styles.text}`}>CloudPad</h4>
+            <p className={`text-xs opacity-50 ${styles.secondaryText}`}>Version 1.0.2 • Secure Note Taking</p>
+        </div>
+
       </div>
     </div>
   );

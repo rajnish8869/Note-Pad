@@ -33,7 +33,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
         : theme === 'vision' 
             ? 'border-[#2F6BFF] shadow-[0_0_12px_rgba(47,107,255,0.25)]'
             : 'border-blue-400/50 dark:border-blue-500/50 shadow-md ring-1 ring-blue-500/20')
-    : '';
+    : 'border-transparent dark:border-gray-800 shadow-sm';
 
   const isLocked = note.isLocked || !!note.encryptedData;
   const isCustomLock = note.lockMode === 'CUSTOM';
@@ -65,6 +65,9 @@ export const NoteCard: React.FC<NoteCardProps> = ({
       onClick();
   }
 
+  // Modern Card Logic
+  const showBody = !isLocked && (note.plainTextPreview || note.title);
+
   return (
     <div 
       onClick={handleClick}
@@ -73,55 +76,63 @@ export const NoteCard: React.FC<NoteCardProps> = ({
       onMouseDown={handleTouchStart}
       onMouseUp={handleTouchEnd}
       onMouseLeave={handleTouchEnd}
-      className={`${colorClass} ${styles.text} border rounded-2xl p-4 transition-all cursor-pointer relative overflow-hidden group break-inside-avoid hover:shadow-lg ${pinnedStyle} ${isLocked ? 'ring-1 ring-inset ring-black/5 dark:ring-white/5' : ''} ${isSelected ? 'ring-2 ring-blue-500 scale-[0.98]' : ''} ${selectionMode && !isSelected ? 'opacity-70 scale-[0.98]' : ''} ${className}`}
+      className={`
+        ${colorClass} ${styles.text} 
+        rounded-[1.5rem] p-5 transition-all duration-200 cursor-pointer relative overflow-hidden group break-inside-avoid 
+        ${pinnedStyle} 
+        ${isLocked ? 'ring-1 ring-inset ring-black/5 dark:ring-white/5' : 'border'} 
+        ${isSelected ? 'ring-2 ring-blue-500 scale-[0.98]' : ''} 
+        ${selectionMode && !isSelected ? 'opacity-60 scale-[0.95]' : ''} 
+        ${className}
+      `}
     >
       <div className="flex justify-between items-start mb-2">
-         <h3 className={`font-semibold text-lg line-clamp-2 leading-tight flex-1 pr-6 mb-1 ${(!note.title && isLocked) ? "italic opacity-50" : ""}`}>
+         <h3 className={`font-bold text-lg leading-tight flex-1 pr-4 ${(!note.title && isLocked) ? "italic opacity-50" : ""}`}>
             {note.title || (isLocked ? "Locked Note" : "Untitled")}
         </h3>
         
         {/* If Selection Mode is active, show checkbox instead of Pin icon */}
         {selectionMode ? (
-             <div className={`absolute top-2 right-2 p-1.5 rounded-full ${isSelected ? 'text-blue-500' : styles.secondaryText}`}>
-                 <Icon name={isSelected ? "checkCircle" : "circle"} size={20} fill={isSelected} />
+             <div className={`flex-shrink-0 transition-colors ${isSelected ? 'text-blue-500' : styles.secondaryText}`}>
+                 <Icon name={isSelected ? "checkCircle" : "circle"} size={22} fill={isSelected} />
              </div>
         ) : (
              !isTrashView && note.isPinned && (
-                <div className={`absolute top-0 right-0 p-2 rounded-bl-xl ${theme === 'vision' ? 'bg-[#2F6BFF] text-white' : 'bg-blue-500 text-white'}`}>
-                    <Icon name="pinFilled" size={12} fill={true} />
+                <div className={`absolute top-0 right-0 p-2.5 rounded-bl-2xl shadow-sm ${theme === 'vision' ? 'bg-[#2F6BFF] text-white' : 'bg-blue-500 text-white'}`}>
+                    <Icon name="pinFilled" size={14} fill={true} />
                 </div>
             )
         )}
       </div>
       
       {isLocked ? (
-        <div className={`mt-2 h-24 rounded-xl flex flex-col items-center justify-center gap-2 border-2 border-dashed transition-colors ${styles.lockedBg} ${styles.lockedBorder}`}>
-           <div className={`p-2 rounded-full ${styles.tagBg} ${isCustomLock ? styles.primaryText : styles.secondaryText}`}>
-                <Icon name="lock" size={20} />
+        <div className={`mt-3 h-20 rounded-2xl flex flex-col items-center justify-center gap-1 border-2 border-dashed transition-colors ${styles.lockedBg} ${styles.lockedBorder}`}>
+           <div className={`p-1.5 rounded-full ${styles.tagBg} ${isCustomLock ? styles.primaryText : styles.secondaryText}`}>
+                <Icon name="lock" size={18} />
            </div>
-           <span className={`text-[10px] uppercase font-bold tracking-widest ${isCustomLock ? styles.primaryText : styles.secondaryText}`}>
+           <span className={`text-[9px] uppercase font-bold tracking-widest ${isCustomLock ? styles.primaryText : styles.secondaryText}`}>
                 {isCustomLock ? "Private" : "Locked"}
            </span>
         </div>
       ) : (
-        <p className={`text-sm line-clamp-[8] mb-3 min-h-[1.5rem] whitespace-pre-wrap ${styles.secondaryText} ${!note.title ? 'text-base pt-1' : ''}`}>
+        <p className={`text-[0.95rem] leading-relaxed line-clamp-[8] mb-3 min-h-[1.5rem] whitespace-pre-wrap opacity-90 ${!note.title ? 'text-lg pt-1 font-medium text-gray-400' : ''}`}>
             {note.plainTextPreview || (note.title ? "" : "Empty note")}
         </p>
       )}
 
       {!isLocked && (hasImage || hasAudio || note.location) && (
-          <div className="flex gap-2 mb-3">
-              {hasImage && <Icon name="image" size={14} className={styles.secondaryText} />}
-              {hasAudio && <Icon name="mic" size={14} className={styles.secondaryText} />}
-              {note.location && <Icon name="mapPin" size={14} className={styles.secondaryText} />}
+          <div className="flex gap-3 mb-3 mt-2">
+              {hasImage && <div className={`p-1.5 rounded-lg ${styles.tagBg}`}><Icon name="image" size={16} className={styles.secondaryText} /></div>}
+              {hasAudio && <div className={`p-1.5 rounded-lg ${styles.tagBg}`}><Icon name="mic" size={16} className={styles.secondaryText} /></div>}
+              {note.location && <div className={`p-1.5 rounded-lg ${styles.tagBg}`}><Icon name="mapPin" size={16} className={styles.secondaryText} /></div>}
           </div>
       )}
 
       {note.tags && note.tags.length > 0 && !isEncrypted && (
-          <div className="flex flex-wrap gap-1 mb-3">
+          <div className="flex flex-wrap gap-1.5 mb-1 mt-auto pt-2">
               {note.tags.slice(0, 3).map(tag => (
-                  <span key={tag} className={`text-[10px] uppercase font-bold tracking-wide px-2 py-0.5 rounded ${styles.tagBg} ${styles.tagText}`}>
-                      {tag}
+                  <span key={tag} className={`text-[10px] font-bold tracking-wide px-2.5 py-1 rounded-md ${styles.tagBg} ${styles.tagText}`}>
+                      #{tag}
                   </span>
               ))}
               {note.tags.length > 3 && (
@@ -130,25 +141,16 @@ export const NoteCard: React.FC<NoteCardProps> = ({
           </div>
       )}
 
-      <div className={`flex justify-between items-center mt-2 text-[10px] ${styles.secondaryText}`}>
-        <span className="flex items-center gap-1">
-             {note.updatedAt > note.createdAt ? "Edited" : ""} {new Date(note.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-             {!isTrashView && note.isSynced && <Icon name="check" size={10} className={styles.successText} />}
+      <div className={`flex justify-between items-center mt-3 pt-2 ${!isTrashView ? `border-t ${styles.divider} border-opacity-40` : ''} text-[10px] ${styles.secondaryText}`}>
+        <span className="flex items-center gap-1.5 font-medium tracking-wide">
+             {new Date(note.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+             {!isTrashView && note.isSynced && <Icon name="check" size={12} className={styles.successText} />}
              {note.isIncognito && <Icon name="incognito" size={12} className="ml-1 opacity-70" />}
         </span>
       </div>
       
-      {!selectionMode && !isTrashView && (
-        <button 
-            onClick={onPin}
-            className={`absolute bottom-2 right-2 p-1.5 rounded-full transition-all ${styles.iconHover} ${note.isPinned ? `opacity-100 ${styles.primaryText}` : `opacity-0 group-hover:opacity-100 ${styles.secondaryText}`}`}
-        >
-            <Icon name={note.isPinned ? 'pinFilled' : 'pin'} size={14} fill={note.isPinned} />
-        </button>
-      )}
-
       {!selectionMode && isTrashView && (
-          <div className={`flex justify-end gap-2 mt-2 pt-2 border-t ${styles.divider}`}>
+          <div className={`flex justify-end gap-3 mt-3 pt-2 border-t ${styles.divider}`}>
               <button 
                 onClick={onRestore}
                 className={`p-2 rounded-full ${styles.iconHover} ${styles.successText}`}
