@@ -1,4 +1,6 @@
-import { Note } from '../types';
+import { Note, UserProfile } from '../types';
+import { Capacitor } from '@capacitor/core';
+import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 
 const FOLDER_NAME = 'CloudPad_Notes_App_Data';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
@@ -12,14 +14,16 @@ export class DriveService {
   
   constructor() {}
 
-  async init(apiKey: string, clientId: string): Promise<void> {
+  async init(apiKey: string, clientId: string): Promise<UserProfile | null> {
+    console.log("[DEBUG] DriveService initializing on origin:", window.location.origin);
+
     return new Promise((resolve, reject) => {
       const gapi = (window as any).gapi;
       const google = (window as any).google;
 
       if (!gapi || !google) {
         console.warn("Google Scripts not loaded");
-        resolve(); 
+        resolve(null); 
         return;
       }
 
@@ -31,66 +35,154 @@ export class DriveService {
           });
 
           // Load the Drive API using the name/version signature
-          // This is more robust than passing the discovery URL directly
           await new Promise((resolveLoad) => {
              gapi.client.load('drive', 'v3', resolveLoad);
           });
           
           this.gapiInited = true;
+          let restoredUser: UserProfile | null = null;
 
-          this.tokenClient = google.accounts.oauth2.initTokenClient({
-            client_id: clientId,
-            scope: 'https://www.googleapis.com/auth/drive.file',
-            callback: (resp: any) => {
-              if (resp.error !== undefined) {
-                reject(resp);
-              }
-              this.accessToken = resp.access_token;
-              resolve();
-            },
-          });
-          this.gisInited = true;
-          // Check for existing token
-          const storedToken = localStorage.getItem('gdrive_token');
-          if (storedToken) {
-            this.accessToken = storedToken;
-            gapi.client.setToken({ access_token: storedToken });
+          // Detect Environment: Web or Native
+          if (Capacitor.isNativePlatform()) {
+             // Native Initialization
+             GoogleAuth.initialize({
+                clientId: clientId,
+                scopes: ['profile', 'email', 'https://www.googleapis.com/auth/drive.file'],
+                grantOfflineAccess: true,
+             });
+             
+             // Attempt to restore native session
+             try {
+                 const authResponse = await GoogleAuth.refresh();
+                 if (authResponse && authResponse.accessToken) {
+                     this.accessToken = authResponse.accessToken;
+                     gapi.client.setToken({ access_token: this.accessToken });
+                     
+                     // Refresh returns Authentication object, not User object.
+                     // We try to fetch user details from Drive API since we have a valid token.
+                     try {
+                         const aboutResp = await gapi.client.drive.about.get({ fields: 'user' });
+                         const driveUser = aboutResp.result.user;
+                         if (driveUser) {
+                             restoredUser = {
+                                 id: driveUser.permissionId || 'native-restored',
+                                 name: driveUser.displayName || "User",
+                                 email: driveUser.emailAddress || "Restored Session",
+                                 imageUrl: driveUser.photoLink
+                             };
+                         }
+                     } catch (profileErr) {
+                         console.warn("Could not fetch user profile after refresh", profileErr);
+                         restoredUser = {
+                             id: 'native-restored',
+                             name: 'Google User',
+                             email: 'Session Restored',
+                             imageUrl: undefined
+                         };
+                     }
+                     
+                     console.log("[DEBUG] Native session restored for:", restoredUser?.email);
+                 }
+             } catch (e) {
+                 console.log("[DEBUG] No native session to restore", e);
+             }
+             
+             resolve(restoredUser);
+          } else {
+             // Web Initialization (GIS)
+             this.tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: clientId,
+                scope: 'https://www.googleapis.com/auth/drive.file',
+                callback: (resp: any) => {
+                  if (resp.error !== undefined) {
+                    reject(resp);
+                  }
+                  this.accessToken = resp.access_token;
+                  // Note: Web callback logic is handled in signIn, this is just init configuration
+                  // We can't resolve the user here from the callback.
+                },
+             });
+             this.gisInited = true;
+             
+             // Check for existing token in localStorage
+             const storedToken = localStorage.getItem('gdrive_token');
+             if (storedToken) {
+                this.accessToken = storedToken;
+                gapi.client.setToken({ access_token: storedToken });
+                // We assume logged in, but don't have full profile details stored.
+                // Return a placeholder that NotesContext can use to show "Logged In" state.
+                restoredUser = { 
+                    id: 'web-restored', 
+                    name: 'Google User', 
+                    email: 'Session Restored' 
+                };
+             }
+             resolve(restoredUser);
           }
-          resolve();
         } catch (err) {
           console.error("GAPI Init Error:", err);
-          reject(err);
+          resolve(null); // Resolve null on error to allow app to continue offline
         }
       });
     });
   }
 
-  async signIn(): Promise<void> {
-    if (!this.tokenClient) return;
-    
-    return new Promise((resolve, reject) => {
-      this.tokenClient.callback = (resp: any) => {
-        if (resp.error) {
-           reject(resp);
-           return;
+  async signIn(): Promise<UserProfile> {
+    if (Capacitor.isNativePlatform()) {
+        try {
+            const user = await GoogleAuth.signIn();
+            this.accessToken = user.authentication.accessToken;
+            // IMPORTANT: Manually set the token for GAPI so subsequent Drive calls work
+            (window as any).gapi.client.setToken({ access_token: this.accessToken });
+            
+            return {
+                id: user.id,
+                // user.displayName might not exist on the type depending on version, safely access it or fallback
+                name: (user as any).displayName || user.givenName || "User",
+                email: user.email,
+                imageUrl: user.imageUrl
+            };
+        } catch (e) {
+            console.error("Native Sign-In failed", e);
+            throw e;
         }
-        this.accessToken = resp.access_token;
-        localStorage.setItem('gdrive_token', resp.access_token);
-        resolve();
-      }
-      
-      this.tokenClient.requestAccessToken({prompt: 'consent'});
-    });
+    } else {
+        if (!this.tokenClient) throw new Error("Token Client not initialized");
+        return new Promise((resolve, reject) => {
+            this.tokenClient.callback = (resp: any) => {
+                if (resp.error) {
+                    reject(resp);
+                    return;
+                }
+                this.accessToken = resp.access_token;
+                localStorage.setItem('gdrive_token', resp.access_token);
+                // On web, we don't get the profile from the token response directly.
+                // We'd need to call the People API or just return a dummy one for now.
+                resolve({
+                    id: 'web-user',
+                    name: 'Google User',
+                    email: 'Signed In'
+                });
+            }
+            this.tokenClient.requestAccessToken({prompt: 'consent'});
+        });
+    }
   }
 
   async signOut() {
-    const google = (window as any).google;
-    if (google && this.accessToken) {
-        google.accounts.oauth2.revoke(this.accessToken, () => {
-            this.accessToken = null;
-            localStorage.removeItem('gdrive_token');
-            (window as any).gapi.client.setToken(null);
-        });
+    if (Capacitor.isNativePlatform()) {
+        await GoogleAuth.signOut();
+        this.accessToken = null;
+        (window as any).gapi.client.setToken(null);
+    } else {
+        const google = (window as any).google;
+        if (google && this.accessToken) {
+            google.accounts.oauth2.revoke(this.accessToken, () => {
+                this.accessToken = null;
+                localStorage.removeItem('gdrive_token');
+                (window as any).gapi.client.setToken(null);
+            });
+        }
     }
   }
 
@@ -160,7 +252,9 @@ export class DriveService {
         // On error (e.g., token expired), return local notes unmodified
         if ((e as any).status === 401) {
             this.accessToken = null;
-            localStorage.removeItem('gdrive_token');
+            if (!Capacitor.isNativePlatform()) {
+                localStorage.removeItem('gdrive_token');
+            }
         }
         throw e;
     }

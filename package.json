@@ -16,6 +16,7 @@
     "@capacitor/cli": "6.0.0",
     "@capacitor/app": "6.0.0",
     "@capgo/capacitor-native-biometric": "6.0.0",
+    "@codetrix-studio/capacitor-google-auth": "3.3.4",
     "localforage": "1.10.0",
     "@tiptap/core": "2.2.4",
     "@tiptap/react": "2.2.4",

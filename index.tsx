@@ -2,6 +2,9 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
+// Log the current origin to assist with Google Auth configuration
+console.log(" [DEBUG] Current Application Origin:", window.location.origin);
+
 // Robustly suppress benign ResizeObserver errors
 const RO_IGNORE_PATTERNS = [
   'ResizeObserver loop completed with undelivered notifications',

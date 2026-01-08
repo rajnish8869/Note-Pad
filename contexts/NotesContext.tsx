@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { Note, Folder, UserProfile } from '../types';
 import { DriveService } from '../services/DriveService';
 import { StorageService } from '../services/StorageService';
@@ -40,6 +40,10 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [syncSuccess, setSyncSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  
+  // Ref to access current state inside callbacks if needed, though mostly used for debounce
+  const notesRef = useRef(notes);
+  useEffect(() => { notesRef.current = notes; }, [notes]);
 
   useEffect(() => {
       const handleStatusChange = () => {
@@ -52,6 +56,26 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           window.removeEventListener('offline', handleStatusChange);
       };
   }, []);
+
+  // Sync wrapper to avoid closure stale state if used in timeout
+  const sync = async () => {
+    // Check ref directly for latest state or use state if function is recreated
+    if(isIncognito || !navigator.onLine) return;
+    
+    setIsSyncing(true);
+    try {
+        const currentNotes = notesRef.current; 
+        const syncedNotes = await driveService.syncNotes(currentNotes);
+        setNotes(syncedNotes);
+        setSyncSuccess(true);
+        setTimeout(() => setSyncSuccess(false), 3000);
+    } catch (error) {
+        console.error("Sync failed", error);
+        // If 401, we might want to logout user locally
+    } finally {
+        setIsSyncing(false);
+    }
+  };
 
   // Load Data
   useEffect(() => {
@@ -91,10 +115,21 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             
             if (savedFolders) setFolders(savedFolders);
             
-            // Init Drive (async)
-            // Note: API KEY is left as placeholder as it was not provided in the update request
-            driveService.init("YOUR_API_KEY", "208175085130-iobgi82bd5dqi1n7pu9udt11ie2h92bb.apps.googleusercontent.com")
-                .catch(e => console.warn("Drive Init Error:", e));
+            // Init Drive (async) & Restore Session
+            const restoredUser = await driveService.init("YOUR_API_KEY", "208175085130-1g95j5f3r0s3df2mui0jmltu4jj0ffln.apps.googleusercontent.com")
+                .catch(e => { console.warn("Drive Init Error:", e); return null; });
+            
+            if (restoredUser) {
+                setUser(restoredUser);
+                // Trigger initial sync after restoration
+                // We use a small timeout to let state settle
+                setTimeout(() => {
+                     // Can't call sync() directly here effectively because it closes over empty notes if defined outside effect
+                     // But we defined sync inside component scope, it closes over initial state...
+                     // Wait, sync uses notesRef now, so it's safe!
+                     sync(); 
+                }, 500);
+            }
                 
         } catch (e) {
             console.error("Failed to initialize storage", e);
@@ -151,8 +186,8 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const login = async () => {
     try {
-        await driveService.signIn();
-        setUser({ id: 'google-user', name: 'Google User', email: 'Signed In' });
+        const userProfile = await driveService.signIn();
+        setUser(userProfile);
         sync();
     } catch (e) {
         console.error("Login failed", e);
@@ -163,21 +198,6 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const logout = async () => {
       await driveService.signOut();
       setUser(null);
-  };
-
-  const sync = async () => {
-    if(isIncognito || !isOnline) return;
-    setIsSyncing(true);
-    try {
-        const syncedNotes = await driveService.syncNotes(notes);
-        setNotes(syncedNotes);
-        setSyncSuccess(true);
-        setTimeout(() => setSyncSuccess(false), 3000);
-    } catch (error) {
-        console.error("Sync failed", error);
-    } finally {
-        setIsSyncing(false);
-    }
   };
 
   return (
