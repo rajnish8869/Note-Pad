@@ -13,8 +13,8 @@ const config: CapacitorConfig = {
   // Ensure we are targeting strict stable versions
   plugins: {
     GoogleAuth: {
-      scopes: ['profile', 'email', 'https://www.googleapis.com/auth/drive.file'],
-      serverClientId: '208175085130-1g95j5f3r0s3df2mui0jmltu4jj0ffln.apps.googleusercontent.com',
+      scopes: ['profile', 'email'],
+      serverClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
       forceCodeForRefreshToken: true,
     },
   },
