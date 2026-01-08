@@ -38,9 +38,8 @@ const MainApp = () => {
   const [pendingAuthNote, setPendingAuthNote] = useState<Note | null>(null);
   
   const [showLockSelection, setShowLockSelection] = useState(false);
-  const [isLockingGlobal, setIsLockingGlobal] = useState(false); // Used when confirming global PIN to lock a note
+  const [isLockingGlobal, setIsLockingGlobal] = useState(false); 
 
-  // State Ref for Back Button Listener
   const stateRef = useRef({
     view, isDrawerOpen, showAuthModal, showSecuritySetup, 
     showLockSelection, isAppLocked, selectionMode
@@ -57,13 +56,11 @@ const MainApp = () => {
     const backListener = CapacitorApp.addListener('backButton', ({ canGoBack }) => {
         const state = stateRef.current;
         
-        // 1. Critical Overlays (Security)
         if (state.isAppLocked) {
             CapacitorApp.exitApp();
             return;
         }
 
-        // 2. Modals managed by App.tsx
         if (state.showAuthModal) {
             setShowAuthModal(false);
             setPendingAuthNote(null);
@@ -79,24 +76,19 @@ const MainApp = () => {
             return;
         }
 
-        // 3. Drawer
         if (state.isDrawerOpen) {
             setIsDrawerOpen(false);
             return;
         }
 
-        // 4. Selection Mode (NEW)
         if (state.selectionMode) {
             setSelectionMode(false);
             return;
         }
 
-        // 5. View Navigation
         switch (state.view) {
             case 'EDITOR':
-                // Note: EditorView will save on unmount via its own cleanup
-                setView('LIST');
-                setActiveNote(null);
+                // Handled internally by EditorView to support dirty checks
                 break;
             case 'SETTINGS':
                 setView('LIST');
@@ -120,9 +112,7 @@ const MainApp = () => {
     };
   }, []);
 
-  // Handle Note Navigation
   const handleNoteClick = (note: Note) => {
-      // Logic for locked notes
       if(note.isLocked || note.encryptedData) {
           if (note.lockMode === 'CUSTOM' && note.security) {
               setPendingAuthNote(note);
@@ -165,18 +155,16 @@ const MainApp = () => {
   };
 
   const handleAuthSuccess = (key: CryptoKey, rawPin?: string) => {
-      // Scenario 1: Unlocking App
       if (isAppLocked) {
           unlockApp(key, rawPin);
           return;
       } 
       
-      // Scenario 2: Unlocking a specific note to view it
       if (pendingAuthNote) {
           if (pendingAuthNote.lockMode === 'CUSTOM') {
               setActiveNoteKey(key);
           } else {
-              unlockApp(key, rawPin); // Unlock global session for convenience
+              unlockApp(key, rawPin); 
           }
           
           setActiveNote(pendingAuthNote);
@@ -187,10 +175,8 @@ const MainApp = () => {
           return;
       } 
       
-      // Scenario 3: Confirming Global PIN to apply Global Lock to a note
       if (isLockingGlobal && activeNote) {
-          unlockApp(key, rawPin); // Ensure session is active
-          // Now apply lock
+          unlockApp(key, rawPin); 
           const lockedNote = {
              ...activeNote,
              isLocked: true,
@@ -209,7 +195,6 @@ const MainApp = () => {
       if (securitySetupMode === 'GLOBAL') {
           setupGlobalSecurity(key, security, rawPin);
       } else if (securitySetupMode === 'CUSTOM' && activeNote) {
-          // Apply Custom Lock
           const lockedNote: Note = {
               ...activeNote,
               isLocked: true,
@@ -225,14 +210,9 @@ const MainApp = () => {
 
   const handleLockToggleRequest = () => {
       if (!activeNote) return;
-
       if (!activeNote.isLocked) {
-          // Lock Request: Show Selection
           setShowLockSelection(true);
       }
-      // Note: If activeNote.isLocked is true (unlock request), 
-      // it is now handled entirely inside EditorView.tsx which 
-      // has access to the decrypted content to safely save the unlocked state.
   };
 
   const handleSelectGlobalLock = () => {
@@ -243,7 +223,6 @@ const MainApp = () => {
       }
 
       if (sessionKey) {
-          // Already authenticated globally
           if (activeNote) {
               const lockedNote = {
                   ...activeNote,
@@ -255,7 +234,6 @@ const MainApp = () => {
               setActiveNoteKey(sessionKey);
           }
       } else {
-          // Need to authenticate to get the session key for encryption
           setIsLockingGlobal(true);
           setShowAuthModal(true);
       }
@@ -267,7 +245,6 @@ const MainApp = () => {
       setShowSecuritySetup(true);
   };
 
-  // Full Screen Overlays
   if (isAppLocked) {
       return <AuthModal onUnlock={handleAuthSuccess} theme={theme} />;
   }
@@ -285,7 +262,6 @@ const MainApp = () => {
       />;
   }
 
-  // Views
   if (view === 'EDITOR' && activeNote) {
       return (
         <>
@@ -298,6 +274,7 @@ const MainApp = () => {
                 onBack={() => setView('LIST')}
                 onDelete={(id) => { deleteNote(id); setView('LIST'); }}
                 onLockToggle={handleLockToggleRequest}
+                initialSearchQuery={searchQuery}
             />
             {showLockSelection && (
                 <LockSelectionModal 
