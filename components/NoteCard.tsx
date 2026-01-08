@@ -13,11 +13,12 @@ interface NoteCardProps {
     selectionMode: boolean;
     isSelected: boolean;
     onLongPress: (id: string) => void;
+    className?: string;
 }
 
 export const NoteCard: React.FC<NoteCardProps> = ({ 
     note, onClick, onPin, onRestore, onDeleteForever, isTrashView,
-    selectionMode, isSelected, onLongPress
+    selectionMode, isSelected, onLongPress, className = ""
 }) => {
   const { theme, styles } = useTheme();
   const colorKey = note.color || 'default';
@@ -72,7 +73,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
       onMouseDown={handleTouchStart}
       onMouseUp={handleTouchEnd}
       onMouseLeave={handleTouchEnd}
-      className={`${colorClass} ${styles.text} border rounded-2xl p-4 transition-all cursor-pointer relative overflow-hidden group mb-4 break-inside-avoid hover:shadow-lg ${pinnedStyle} ${isLocked ? 'ring-1 ring-inset ring-black/5 dark:ring-white/5' : ''} ${isSelected ? 'ring-2 ring-blue-500 scale-[0.98]' : ''} ${selectionMode && !isSelected ? 'opacity-70 scale-[0.98]' : ''}`}
+      className={`${colorClass} ${styles.text} border rounded-2xl p-4 transition-all cursor-pointer relative overflow-hidden group break-inside-avoid hover:shadow-lg ${pinnedStyle} ${isLocked ? 'ring-1 ring-inset ring-black/5 dark:ring-white/5' : ''} ${isSelected ? 'ring-2 ring-blue-500 scale-[0.98]' : ''} ${selectionMode && !isSelected ? 'opacity-70 scale-[0.98]' : ''} ${className}`}
     >
       <div className="flex justify-between items-start mb-2">
          <h3 className={`font-semibold text-lg line-clamp-2 leading-tight flex-1 pr-6 mb-1 ${(!note.title && isLocked) ? "italic opacity-50" : ""}`}>

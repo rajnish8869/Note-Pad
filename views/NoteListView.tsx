@@ -4,6 +4,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { NoteCard } from '../components/NoteCard';
 import { Icon } from '../components/Icon';
 import { Note, ViewState } from '../types';
+import { Virtuoso } from 'react-virtuoso';
 
 interface Props {
   view: ViewState;
@@ -20,17 +21,32 @@ export const NoteListView: React.FC<Props> = ({
     view, currentFolderId, onNoteClick, onMenuClick, 
     searchQuery, setSearchQuery, selectionMode, setSelectionMode 
 }) => {
-  const { notes, folders, isIncognito, user, syncSuccess, deleteNote, restoreNote, deleteForever, addNote, updateNote } = useNotes();
+  const { notes, folders, isIncognito, user, syncSuccess, isOnline, deleteNote, restoreNote, deleteForever, addNote, updateNote } = useNotes();
   const { theme, styles } = useTheme();
   const [layoutMode, setLayoutMode] = useState<'GRID' | 'LIST'>('GRID');
   const [sortBy, setSortBy] = useState<'UPDATED' | 'CREATED' | 'TITLE'>('UPDATED');
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   
   // Selection State
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showMoveMenu, setShowMoveMenu] = useState(false);
 
-  // Clear selection when mode is turned off externally (e.g. back button)
+  useEffect(() => {
+      const handleResize = () => setWindowWidth(window.innerWidth);
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Determine Columns based on width and mode
+  const numColumns = useMemo(() => {
+      if (layoutMode === 'LIST') return 1;
+      if (windowWidth >= 1024) return 3; // Desktop
+      if (windowWidth >= 768) return 2; // Tablet
+      return 2; // Mobile - Defaults to 2 columns for grid
+  }, [layoutMode, windowWidth]);
+
+  // Clear selection when mode is turned off externally
   useEffect(() => {
       if (!selectionMode) {
           setSelectedIds(new Set());
@@ -70,6 +86,15 @@ export const NoteListView: React.FC<Props> = ({
     });
   }, [notes, searchQuery, view, currentFolderId, sortBy]);
 
+  // Chunk notes for virtualization rows
+  const rows = useMemo(() => {
+      const chunks = [];
+      for (let i = 0; i < filteredNotes.length; i += numColumns) {
+          chunks.push(filteredNotes.slice(i, i + numColumns));
+      }
+      return chunks;
+  }, [filteredNotes, numColumns]);
+
   const togglePin = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     const note = notes.find(n => n.id === id);
@@ -80,7 +105,6 @@ export const NoteListView: React.FC<Props> = ({
       if (!selectionMode) {
           setSelectionMode(true);
           setSelectedIds(new Set([id]));
-          // Optional: Haptic feedback here
       }
   };
 
@@ -114,7 +138,6 @@ export const NoteListView: React.FC<Props> = ({
   const handleBulkDelete = () => {
       const ids = Array.from(selectedIds);
       if (view === 'TRASH') {
-          // Confirm delete forever?
           if(confirm(`Permanently delete ${ids.length} notes?`)) {
               ids.forEach(id => deleteForever(id));
               setSelectionMode(false);
@@ -133,7 +156,6 @@ export const NoteListView: React.FC<Props> = ({
 
   const handleBulkPin = () => {
       const ids = Array.from(selectedIds);
-      // Logic: If any is unpinned, pin all. If all pinned, unpin all.
       const allPinned = ids.every(id => notes.find(n => n.id === id)?.isPinned);
       
       ids.forEach(id => {
@@ -154,7 +176,7 @@ export const NoteListView: React.FC<Props> = ({
   };
 
   return (
-    <div className="w-full max-w-md md:max-w-3xl min-h-[100dvh] relative flex flex-col">
+    <div className="w-full max-w-md md:max-w-4xl min-h-[100dvh] relative flex flex-col">
         {isIncognito && (
             <div className="bg-purple-900 text-white text-xs text-center py-1 font-bold tracking-widest uppercase pt-[env(safe-area-inset-top)]">
                 Incognito Mode Active - Data not saved
@@ -192,6 +214,12 @@ export const NoteListView: React.FC<Props> = ({
                       className={`w-full bg-transparent border-none focus:ring-0 text-base ${styles.searchBarText} ${styles.searchBarPlaceholder}`}
                     />
                 </div>
+
+                {!isOnline && (
+                    <div className="mr-2 text-gray-400" title="Offline">
+                        <Icon name="cloudOff" size={20} />
+                    </div>
+                )}
 
                 {view === 'LIST' && (
                     <>
@@ -231,6 +259,12 @@ export const NoteListView: React.FC<Props> = ({
         )}
 
         <main className="flex-1 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] -mt-2">
+            {view === 'TRASH' && (
+                <div className={`mb-4 py-3 px-4 rounded-xl text-xs text-center font-medium ${theme === 'neo-glass' ? 'bg-white/10 text-white/70 border border-white/10' : (theme === 'dark' || theme === 'vision' ? 'bg-white/5 text-gray-400' : 'bg-gray-100 text-gray-500')}`}>
+                    Items in Trash are permanently deleted after 30 days
+                </div>
+            )}
+
             {filteredNotes.length === 0 ? (
                 <div className={`flex flex-col items-center justify-center h-[60vh] ${styles.secondaryText}`}>
                     <div className={`p-8 rounded-full mb-6 ${styles.tagBg}`}>
@@ -239,22 +273,34 @@ export const NoteListView: React.FC<Props> = ({
                     <p className="font-bold text-lg">{searchQuery ? "No results found" : "No notes here"}</p>
                 </div>
             ) : (
-                <div className={`${layoutMode === 'GRID' ? 'columns-2 md:columns-3 gap-4 space-y-4' : 'flex flex-col gap-4'}`}>
-                    {filteredNotes.map(note => (
-                        <NoteCard 
-                            key={note.id} 
-                            note={note} 
-                            onClick={() => handleNoteInteraction(note)}
-                            onPin={(e) => togglePin(e, note.id)}
-                            onRestore={(e) => { e.stopPropagation(); restoreNote(note.id); }}
-                            onDeleteForever={(e) => { e.stopPropagation(); deleteForever(note.id); }}
-                            isTrashView={!!note.isTrashed}
-                            selectionMode={selectionMode}
-                            isSelected={selectedIds.has(note.id)}
-                            onLongPress={handleLongPress}
-                        />
-                    ))}
-                </div>
+                <Virtuoso 
+                    useWindowScroll
+                    data={rows}
+                    className="w-full"
+                    itemContent={(index, rowNotes) => (
+                        <div 
+                            className={`grid gap-4 mb-4 ${
+                                numColumns === 1 ? 'grid-cols-1' : (numColumns === 2 ? 'grid-cols-2' : 'grid-cols-3')
+                            }`}
+                        >
+                            {rowNotes.map(note => (
+                                <NoteCard 
+                                    key={note.id} 
+                                    note={note} 
+                                    onClick={() => handleNoteInteraction(note)}
+                                    onPin={(e) => togglePin(e, note.id)}
+                                    onRestore={(e) => { e.stopPropagation(); restoreNote(note.id); }}
+                                    onDeleteForever={(e) => { e.stopPropagation(); deleteForever(note.id); }}
+                                    isTrashView={!!note.isTrashed}
+                                    selectionMode={selectionMode}
+                                    isSelected={selectedIds.has(note.id)}
+                                    onLongPress={handleLongPress}
+                                    className="h-full"
+                                />
+                            ))}
+                        </div>
+                    )}
+                />
             )}
         </main>
 

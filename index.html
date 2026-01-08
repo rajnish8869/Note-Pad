@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob: filesystem: about: ws: wss:;">
     <title>CloudPad</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
@@ -28,6 +29,19 @@
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
         .pt-safe { padding-top: env(safe-area-inset-top); }
+
+        /* Tiptap Editor Styles */
+        .ProseMirror {
+            outline: none;
+            min-height: 50vh;
+        }
+        .ProseMirror p.is-editor-empty:first-child::before {
+            color: #9ca3af;
+            content: attr(data-placeholder);
+            float: left;
+            height: 0;
+            pointer-events: none;
+        }
     </style>
 
     <script>
@@ -82,6 +96,12 @@
     "@capacitor/app": "https://esm.sh/@capacitor/app@6.0.0?bundle",
     "@capgo/capacitor-native-biometric": "https://esm.sh/@capgo/capacitor-native-biometric@6.0.0?bundle",
     "localforage": "https://esm.sh/localforage@1.10.0",
+    "@tiptap/core": "https://esm.sh/@tiptap/core@2.2.4?deps=react@18.2.0,react-dom@18.2.0",
+    "@tiptap/react": "https://esm.sh/@tiptap/react@2.2.4?deps=react@18.2.0,react-dom@18.2.0",
+    "@tiptap/starter-kit": "https://esm.sh/@tiptap/starter-kit@2.2.4?deps=react@18.2.0,react-dom@18.2.0",
+    "@tiptap/extension-image": "https://esm.sh/@tiptap/extension-image@2.2.4?deps=react@18.2.0,react-dom@18.2.0",
+    "@tiptap/extension-placeholder": "https://esm.sh/@tiptap/extension-placeholder@2.2.4?deps=react@18.2.0,react-dom@18.2.0",
+    "react-virtuoso": "https://esm.sh/react-virtuoso@4.7.1?deps=react@18.2.0,react-dom@18.2.0",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
   }
 }
@@ -90,23 +110,7 @@
 <body class="bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-gray-100 select-none">
     
     <div id="root"></div>
-
-    <script type="module">
-        import React from 'react';
-        import { createRoot } from 'react-dom/client';
-        import { Filesystem } from '@capacitor/filesystem';
-
-        const App = () => {
-            return React.createElement('div', { className: 'p-8' }, 
-                React.createElement('h1', { className: 'text-2xl font-bold text-primary-600' }, 'CloudPad Initialized'),
-                React.createElement('p', { className: 'mt-2' }, 'Filesystem and React are ready.')
-            );
-        };
-
-        const container = document.getElementById('root');
-        const root = createRoot(container);
-        root.render(React.createElement(App));
-    </script>
+    <script type="module" src="./index.tsx"></script>
 
 </body>
 </html>

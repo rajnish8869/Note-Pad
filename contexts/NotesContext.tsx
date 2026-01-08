@@ -11,6 +11,7 @@ interface NotesContextType {
   isSyncing: boolean;
   syncSuccess: boolean;
   isLoading: boolean;
+  isOnline: boolean;
   
   // Actions
   addNote: (note: Note) => void;
@@ -38,6 +39,19 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+      const handleStatusChange = () => {
+          setIsOnline(navigator.onLine);
+      };
+      window.addEventListener('online', handleStatusChange);
+      window.addEventListener('offline', handleStatusChange);
+      return () => {
+          window.removeEventListener('online', handleStatusChange);
+          window.removeEventListener('offline', handleStatusChange);
+      };
+  }, []);
 
   // Load Data
   useEffect(() => {
@@ -151,7 +165,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const sync = async () => {
-    if(isIncognito) return;
+    if(isIncognito || !isOnline) return;
     setIsSyncing(true);
     try {
         const syncedNotes = await driveService.syncNotes(notes);
@@ -174,6 +188,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isSyncing,
         syncSuccess,
         isLoading,
+        isOnline,
         addNote,
         updateNote,
         deleteNote,

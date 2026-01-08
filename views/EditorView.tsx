@@ -1,4 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useEditor, EditorContent, ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Image from '@tiptap/extension-image';
+import Placeholder from '@tiptap/extension-placeholder';
+import { Node, mergeAttributes } from '@tiptap/core';
+
 import { Icon } from '../components/Icon';
 import { Note, EncryptedData, Folder } from '../types';
 import { SecurityService } from '../services/SecurityService';
@@ -16,6 +22,88 @@ interface EditorViewProps {
   onLockToggle: () => void;
 }
 
+// --- Custom Image Node View ---
+const ImageNode = (props: any) => {
+  const { node, selected } = props;
+  const [src, setSrc] = useState(node.attrs.src);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+     setSrc(node.attrs.src);
+     setError(false);
+  }, [node.attrs.src]);
+
+  return (
+    <NodeViewWrapper className="my-4">
+      <div className={`relative rounded-xl overflow-hidden transition-all ${selected ? 'ring-2 ring-blue-500' : ''}`}>
+        {error ? (
+            <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-500 text-sm flex items-center gap-2 border border-red-200 dark:border-red-800 rounded-xl select-none">
+                <div className="p-2 bg-red-100 dark:bg-red-800 rounded-full">
+                    <Icon name="image" size={20} />
+                </div>
+                <div>
+                    <div className="font-bold">Image Load Error</div>
+                    <div className="text-xs opacity-70 break-all">{node.attrs['data-filename'] || 'Unknown file'}</div>
+                    <div className="text-[10px] opacity-50 break-all">{src ? src.substring(0, 50) + '...' : 'No Source'}</div>
+                </div>
+            </div>
+        ) : (
+            <img 
+              src={src} 
+              alt={node.attrs.alt}
+              className="max-w-full h-auto rounded-xl shadow-sm border border-black/5 dark:border-white/5 bg-gray-100 dark:bg-gray-800 min-h-[100px]"
+              onError={(e) => {
+                  console.error("[Editor] FAILED TO LOAD IMAGE:", src ? src.substring(0, 100) : "null");
+                  setError(true);
+              }}
+              onLoad={() => console.log("[Editor] IMAGE LOADED SUCCESSFULLY")}
+            />
+        )}
+      </div>
+    </NodeViewWrapper>
+  );
+};
+
+const CustomImage = Image.extend({
+  addAttributes() {
+    return {
+      src: { default: null },
+      alt: { default: null },
+      title: { default: null },
+      'data-filename': { default: null },
+    };
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(ImageNode);
+  },
+});
+
+// Custom Audio Extension
+const AudioExtension = Node.create({
+  name: 'audio',
+  group: 'block',
+  atom: true,
+  draggable: true,
+  
+  addAttributes() {
+    return {
+      src: { default: null },
+      'data-filename': { default: null },
+    }
+  },
+
+  parseHTML() {
+    return [{ tag: 'audio' }]
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ['div', { class: 'my-2 p-2 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center gap-2 border border-black/5' },
+      ['span', { class: 'text-xs font-bold uppercase tracking-wider opacity-50 select-none' }, 'Voice Note'],
+      ['audio', mergeAttributes(HTMLAttributes, { controls: true, class: 'h-8 w-full' })]
+    ]
+  },
+});
+
 export const EditorView: React.FC<EditorViewProps> = ({ 
     note, folders, initialEditMode, activeNoteKey, onSave, onBack, onDelete, onLockToggle 
 }) => {
@@ -23,8 +111,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
   
   const [isEditing, setIsEditing] = useState(initialEditMode);
   const [title, setTitle] = useState(note.title);
-  // We use contentState only for initial render and non-editable view
-  const [contentState, setContentState] = useState<string>('');
   
   const [isDecrypted, setIsDecrypted] = useState(!note.encryptedData);
   const [decryptionError, setDecryptionError] = useState(false);
@@ -35,25 +121,45 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [folderId, setFolderId] = useState(note.folderId || '');
   const [location, setLocation] = useState(note.location);
   
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [newTag, setNewTag] = useState('');
   
-  // Media States
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   
-  const contentRef = useRef<HTMLDivElement>(null);
-  const saveTimeoutRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // Ref to track the last encrypted data we saved to prevent reload loops
+  const saveTimeoutRef = useRef<any>(null);
   const lastSavedEncryptedDataRef = useRef<string | null>(null);
 
-  // Helper: Expand placeholders to real base64 for display
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      CustomImage.configure({
+        inline: true,
+        allowBase64: true,
+      }),
+      Placeholder.configure({
+        placeholder: 'Start typing...',
+        emptyEditorClass: 'is-editor-empty',
+      }),
+      AudioExtension
+    ],
+    editable: isEditing,
+    editorProps: {
+      attributes: {
+        class: `prose max-w-none focus:outline-none ${theme === 'dark' || theme === 'neo-glass' || theme === 'vision' ? 'prose-invert' : ''}`,
+      },
+    },
+  });
+
+  useEffect(() => {
+    editor?.setEditable(isEditing);
+  }, [editor, isEditing]);
+
+  // Expand placeholders: Loads Native File URL (Web-friendly) instead of Base64
   const expandMedia = useCallback(async (html: string): Promise<string> => {
-      // Use DOM parsing instead of Regex to handle browser URL encoding (e.g., [[ -> %5B%5B)
+      console.log("[Editor] Expanding media placeholders...");
       const div = document.createElement('div');
       div.innerHTML = html;
       
@@ -62,18 +168,18 @@ export const EditorView: React.FC<EditorViewProps> = ({
               const src = el.getAttribute('src');
               if (!src) continue;
 
-              // Decode URI to handle %5B%5BFILE:...%5D%5D scenarios
               const decodedSrc = decodeURIComponent(src);
-              
-              // Check if it matches our placeholder pattern
               const match = decodedSrc.match(/\[\[FILE:([^\]]+)\]\]/);
               
               if (match) {
                   const filename = match[1];
-                  const base64 = await StorageService.loadMedia(filename);
-                  if (base64) {
-                      el.setAttribute('src', base64);
+                  // Use getMediaUrl for a lightweight webview-friendly URL
+                  const url = await StorageService.getMediaUrl(filename);
+                  if (url) {
+                      el.setAttribute('src', url);
                       el.setAttribute('data-filename', filename);
+                  } else {
+                      console.error(`[Editor] Failed to load URL for: ${filename}`);
                   }
               }
           }
@@ -85,36 +191,29 @@ export const EditorView: React.FC<EditorViewProps> = ({
       return div.innerHTML;
   }, []);
 
-  // Helper: Compress real base64 to placeholders for storage
+  // Compress: Replaces URLs with [[FILE:filename]]
   const compressMedia = (html: string): string => {
       const div = document.createElement('div');
       div.innerHTML = html;
       
-      const imgs = div.querySelectorAll('img');
-      imgs.forEach(img => {
-          const filename = img.getAttribute('data-filename');
-          if (filename) {
-              img.setAttribute('src', `[[FILE:${filename}]]`);
-          }
-      });
+      const processElements = (elements: NodeListOf<Element>) => {
+        elements.forEach(el => {
+            const filename = el.getAttribute('data-filename');
+            if (filename) {
+                el.setAttribute('src', `[[FILE:${filename}]]`);
+            }
+        });
+      }
 
-      const audios = div.querySelectorAll('audio');
-      audios.forEach(audio => {
-          const filename = audio.getAttribute('data-filename');
-          if (filename) {
-              audio.setAttribute('src', `[[FILE:${filename}]]`);
-          }
-      });
+      processElements(div.querySelectorAll('img'));
+      processElements(div.querySelectorAll('audio'));
       
       return div.innerHTML;
   };
 
   useEffect(() => {
     const initContent = async () => {
-      // If the encrypted data changed because WE just saved it, don't re-init
-      if (note.encryptedData && note.encryptedData === lastSavedEncryptedDataRef.current) {
-         return;
-      }
+      if (note.encryptedData && note.encryptedData === lastSavedEncryptedDataRef.current) return;
 
       setIsLoadingContent(true);
       let loadedContent = note.content;
@@ -145,42 +244,31 @@ export const EditorView: React.FC<EditorViewProps> = ({
         setDecryptionError(false);
       }
 
-      // Expand Media
       const expanded = await expandMedia(loadedContent);
       setTitle(loadedTitle);
-      setContentState(expanded);
       
-      // Update the editable div if it exists and is empty/different
-      if (contentRef.current) {
-          contentRef.current.innerHTML = expanded;
+      if (editor) {
+        editor.commands.setContent(expanded);
       }
       
       setIsLoadingContent(false);
     };
 
     initContent();
-  }, [note.id, note.encryptedData, activeNoteKey, expandMedia]);
+  }, [note.id, note.encryptedData, activeNoteKey, editor, expandMedia]);
 
   const handleSave = useCallback(async () => {
-    let currentHtml = contentState;
-    if (isEditing && contentRef.current) {
-         currentHtml = contentRef.current.innerHTML;
-         setContentState(currentHtml);
-    }
-    
-    // Create plain text preview
-    const temp = document.createElement("div");
-    temp.innerHTML = currentHtml;
-    const plainText = temp.innerText;
+    if (!editor) return;
 
-    // Compress content (offload binaries)
+    const currentHtml = editor.getHTML();
+    const plainText = editor.getText();
     const compressedContent = compressMedia(currentHtml);
 
     let updatedNote: Note = {
       ...note,
       title,
       content: compressedContent,
-      plainTextPreview: plainText,
+      plainTextPreview: plainText.substring(0, 300),
       updatedAt: Date.now(),
       isSynced: false,
       tags,
@@ -212,31 +300,20 @@ export const EditorView: React.FC<EditorViewProps> = ({
     }
 
     onSave(updatedNote);
-  }, [note, title, tags, color, folderId, location, onSave, isEditing, activeNoteKey, contentState]);
+  }, [note, title, tags, color, folderId, location, onSave, activeNoteKey, editor]);
 
-  // Keep a ref to the latest handleSave to call it on unmount
   const handleSaveRef = useRef(handleSave);
   useEffect(() => {
     handleSaveRef.current = handleSave;
   }, [handleSave]);
 
-  // Handle Locking/Unlocking Logic
   const handleLockAction = () => {
       setShowSettings(false);
-      
+      if (!editor) return;
+
       if (note.isLocked) {
-          // UNLOCKING: We handle this internally because we possess the decrypted content.
-          // App.tsx doesn't have the decrypted content, so letting it handle unlock results in data loss.
-          
-          let currentHtml = contentState;
-          if (isEditing && contentRef.current) {
-               currentHtml = contentRef.current.innerHTML;
-               setContentState(currentHtml);
-          }
-          
-          const temp = document.createElement("div");
-          temp.innerHTML = currentHtml;
-          const plainText = temp.innerText;
+          const currentHtml = editor.getHTML();
+          const plainText = editor.getText();
           const compressedContent = compressMedia(currentHtml);
 
           const unlockedNote: Note = {
@@ -254,85 +331,31 @@ export const EditorView: React.FC<EditorViewProps> = ({
               folderId: folderId || undefined,
               location: location
           };
-          
           onSave(unlockedNote);
       } else {
-          // LOCKING: We delegate this to App.tsx to show the selection modal.
-          // But first, save current changes to ensure the note is up to date before locking.
           handleSave();
           onLockToggle();
       }
   };
 
-  // Keyboard Handling Logic
-  useEffect(() => {
-    const handleViewportResize = () => {
-        if (!isEditing) return;
-
-        // Small delay to allow Android keyboard to animate and layout to settle
-        setTimeout(() => {
-            const selection = window.getSelection();
-            if (!selection || selection.rangeCount === 0) return;
-
-            let node = selection.focusNode;
-            // Get the actual element if it's a text node
-            if (node?.nodeType === Node.TEXT_NODE) {
-                node = node.parentElement;
-            }
-
-            // Ensure the cursor is inside the editor content
-            if (node instanceof HTMLElement && contentRef.current?.contains(node)) {
-                // Check if the node is actually out of view (bottom covered by keyboard)
-                // visualViewport.height tells us the height of the visible area (screen - keyboard)
-                const rect = node.getBoundingClientRect();
-                const viewportHeight = window.visualViewport?.height || window.innerHeight;
-                
-                // If the element's bottom is below the viewport, scroll it up
-                if (rect.bottom > viewportHeight) {
-                    node.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                }
-            }
-        }, 150);
-    };
-
-    if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', handleViewportResize);
-        window.visualViewport.addEventListener('scroll', handleViewportResize);
-    } else {
-        window.addEventListener('resize', handleViewportResize);
-    }
-
-    return () => {
-        if (window.visualViewport) {
-            window.visualViewport.removeEventListener('resize', handleViewportResize);
-            window.visualViewport.removeEventListener('scroll', handleViewportResize);
-        } else {
-            window.removeEventListener('resize', handleViewportResize);
-        }
-    };
-  }, [isEditing]);
-
-  // Auto-save logic
   useEffect(() => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     if (!isDecrypted || isLoadingContent) return;
 
     saveTimeoutRef.current = setTimeout(() => {
         handleSave();
-    }, 2000); // 2 seconds debounce
+    }, 2000); 
 
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
   }, [title, tags, color, folderId, location, handleSave, isDecrypted, isLoadingContent]);
 
-  // Ensure save on unmount (e.g. back button)
   useEffect(() => {
     return () => {
         handleSaveRef.current();
     };
   }, []);
-
 
   const handleAddTag = () => {
       if(newTag.trim() && !tags.includes(newTag.trim())) {
@@ -345,37 +368,41 @@ export const EditorView: React.FC<EditorViewProps> = ({
       setTags(tags.filter(t => t !== tToRemove));
   };
 
-  const execCmd = (command: string, value: string | undefined = undefined) => {
-    document.execCommand(command, false, value);
-    if (contentRef.current) {
-        // We don't setContentState here to avoid re-renders losing cursor
-    }
-  };
-
-  const insertHtml = (html: string) => {
-      if (contentRef.current) {
-          contentRef.current.focus();
-          document.execCommand('insertHTML', false, html);
-          document.execCommand('insertHTML', false, '<br>');
-      }
-  };
-
-  // --- Media Handlers ---
-
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (file) {
+      if (file && editor) {
+          console.log("[Editor] Starting Image Upload...");
           const reader = new FileReader();
           reader.onload = async (event) => {
               const base64 = event.target?.result as string;
               if (base64) {
-                  // Save to FS immediately
-                  const filename = await StorageService.saveMedia(base64);
-                  if (filename) {
-                      const imgHtml = `<img src="${base64}" data-filename="${filename}" class="max-w-full rounded-xl my-2 shadow-sm border border-black/5" />`;
-                      insertHtml(imgHtml);
-                  } else {
-                      alert("Failed to save image");
+                  try {
+                      console.log("[Editor] Saving image to filesystem...");
+                      const filename = await StorageService.saveMedia(base64);
+                      if (filename) {
+                          console.log(`[Editor] Saved as ${filename}`);
+                          
+                          // Use Web-friendly URL for display
+                          const url = await StorageService.getMediaUrl(filename);
+                          
+                          if (url) {
+                            console.log(`[Editor] Inserting image URL...`);
+                            editor.chain().focus().insertContent({
+                                type: 'image',
+                                attrs: {
+                                    src: url,
+                                    'data-filename': filename
+                                }
+                            }).run();
+                          } else {
+                            alert("Error: Image saved but could not be read back.");
+                          }
+                      } else {
+                          alert("Error: Failed to save image file.");
+                      }
+                  } catch (err) {
+                      console.error("[Editor] Image Upload Error", err);
+                      alert(`Image Error: ${err}`);
                   }
               }
           };
@@ -404,17 +431,19 @@ export const EditorView: React.FC<EditorViewProps> = ({
                   reader.readAsDataURL(audioBlob);
                   reader.onloadend = async () => {
                       const base64data = reader.result as string;
-                      // Save to FS
                       const filename = await StorageService.saveMedia(base64data);
                       
-                      if (filename) {
-                        const audioHtml = `
-                            <div class="my-2 p-2 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center gap-2 border border-black/5" contenteditable="false">
-                                <span class="text-xs font-bold uppercase tracking-wider opacity-50 select-none">Voice Note</span>
-                                <audio controls src="${base64data}" data-filename="${filename}" class="h-8 w-full"></audio>
-                            </div>
-                        `;
-                        insertHtml(audioHtml);
+                      if (filename && editor) {
+                        const url = await StorageService.getMediaUrl(filename);
+                        if (url) {
+                            editor.chain().focus().insertContent({
+                                type: 'audio',
+                                attrs: {
+                                    src: url,
+                                    'data-filename': filename
+                                }
+                            }).run();
+                        }
                       }
                       stream.getTracks().forEach(track => track.stop());
                   };
@@ -449,7 +478,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const handleShare = async () => {
       if (navigator.share) {
           try {
-              const plainText = contentRef.current ? contentRef.current.innerText : note.plainTextPreview;
+              const plainText = editor?.getText() || note.plainTextPreview;
               await navigator.share({
                   title: title || 'CloudPad Note',
                   text: `${title}\n\n${plainText}`,
@@ -499,14 +528,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     <div className={`flex flex-col min-h-[100dvh] transition-colors duration-300 animate-slide-in relative ${editorBgClass}`}>
       <div className={`flex flex-col flex-1 ${theme === 'neo-glass' ? 'bg-white/10 backdrop-blur-3xl' : ''}`}>
         
-        {/* Hidden File Input */}
-        <input 
-            type="file" 
-            ref={fileInputRef} 
-            accept="image/*" 
-            className="hidden" 
-            onChange={handleImageUpload} 
-        />
+        <input type="file" ref={fileInputRef} accept="image/*" className="hidden" onChange={handleImageUpload} />
 
         {/* Toolbar */}
         <div className={`flex items-center justify-between sticky top-0 z-10 pt-[calc(0.5rem+env(safe-area-inset-top))] pb-2 px-2 md:px-4 ${styles.header} border-b-0 bg-transparent backdrop-blur-sm`}>
@@ -525,9 +547,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                 )}
 
                 {isEditing && (
-                    <>
                     <button onClick={handleShare} className={`p-2 rounded-full ${styles.iconHover} ${styles.text}`}><Icon name="share" size={20} /></button>
-                    </>
                 )}
                 
                 <button onClick={() => setShowSettings(!showSettings)} className={`p-2 rounded-full ${showSettings ? `${styles.primaryBg} ${styles.primaryText}` : `${styles.iconHover} ${styles.text}`}`}>
@@ -599,28 +619,19 @@ export const EditorView: React.FC<EditorViewProps> = ({
                         {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                     </select>
                 </div>
-                <button onClick={() => setShowDeleteConfirm(true)} className={`w-full flex items-center gap-2 ${styles.dangerText} p-2 ${styles.dangerBg} rounded-lg text-sm`}><Icon name="trash" size={16} /> Move to Trash</button>
             </div>
             </>
         )}
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-40" onClick={!isEditing ? (e) => e.detail === 3 && setIsEditing(true) : undefined}>
-            {isEditing ? (
-                <>
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-40">
+             {isEditing ? (
+                 <>
                     <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className={`w-full text-2xl md:text-3xl font-bold bg-transparent border-none outline-none mb-4 ${styles.text} ${styles.searchBarPlaceholder}`} />
-                    <div 
-                        ref={contentRef} 
-                        contentEditable 
-                        className={`w-full min-h-[50vh] text-lg leading-relaxed outline-none empty:before:content-[attr(data-placeholder)] ${styles.text} ${theme === 'neo-glass' ? 'empty:before:text-white/40' : 'empty:before:text-gray-400'}`} 
-                        data-placeholder="Start typing..." 
-                        dangerouslySetInnerHTML={{__html: contentState}}
-                        // We do NOT bind onInput to setContentState to avoid cursor jump issues.
-                        // We only read from contentRef during save.
-                    />
-                </>
-            ) : (
+                    <EditorContent editor={editor} className={styles.text} />
+                 </>
+             ) : (
                 <>
-                    <div className="mb-4">
+                     <div className="mb-4">
                         <h1 className={`text-2xl md:text-3xl font-bold break-words ${styles.text}`}>{title || <span className="opacity-50 italic">Untitled</span>}</h1>
                         <div className="flex flex-wrap gap-2 mt-2 items-center">
                             {tags.map(t => <span key={t} className={`text-xs px-2 py-1 rounded-full ${styles.tagBg} ${styles.tagText}`}>#{t}</span>)}
@@ -638,18 +649,34 @@ export const EditorView: React.FC<EditorViewProps> = ({
                             )}
                         </div>
                     </div>
-                    <div className={`w-full min-h-[50vh] text-lg leading-relaxed break-words prose max-w-none ${theme === 'dark' || theme === 'neo-glass' || theme === 'vision' ? 'prose-invert' : ''} ${styles.text}`} dangerouslySetInnerHTML={{__html: contentState || "<p class='opacity-50 italic'>No content</p>"}} />
+                    <div className={`w-full min-h-[50vh] text-lg leading-relaxed break-words prose max-w-none ${theme === 'dark' || theme === 'neo-glass' || theme === 'vision' ? 'prose-invert' : ''} ${styles.text}`}>
+                         <EditorContent editor={editor} />
+                    </div>
                 </>
-            )}
+             )}
         </div>
 
-        {/* Enhanced Editing Toolbar */}
         {isEditing && (
             <div className={`p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] flex items-center justify-between ${styles.cardBase} border-t ${styles.divider} gap-2 px-4`}>
                 <div className="flex gap-1">
-                    <button onClick={() => execCmd('bold')} className={`p-2.5 rounded-lg ${styles.iconHover} ${styles.text}`}><Icon name="bold" size={20} /></button>
-                    <button onClick={() => execCmd('italic')} className={`p-2.5 rounded-lg ${styles.iconHover} ${styles.text}`}><Icon name="italic" size={20} /></button>
-                    <button onClick={() => execCmd('insertUnorderedList')} className={`p-2.5 rounded-lg ${styles.iconHover} ${styles.text}`}><Icon name="list" size={20} /></button>
+                    <button 
+                        onClick={() => editor?.chain().focus().toggleBold().run()} 
+                        className={`p-2.5 rounded-lg ${editor?.isActive('bold') ? styles.activeItem : `${styles.iconHover} ${styles.text}`}`}
+                    >
+                        <Icon name="bold" size={20} />
+                    </button>
+                    <button 
+                        onClick={() => editor?.chain().focus().toggleItalic().run()} 
+                        className={`p-2.5 rounded-lg ${editor?.isActive('italic') ? styles.activeItem : `${styles.iconHover} ${styles.text}`}`}
+                    >
+                        <Icon name="italic" size={20} />
+                    </button>
+                    <button 
+                        onClick={() => editor?.chain().focus().toggleBulletList().run()} 
+                        className={`p-2.5 rounded-lg ${editor?.isActive('bulletList') ? styles.activeItem : `${styles.iconHover} ${styles.text}`}`}
+                    >
+                        <Icon name="list" size={20} />
+                    </button>
                 </div>
                 
                 <div className={`h-6 w-px ${styles.divider} bg-gray-300 dark:bg-gray-700 mx-1`} />
@@ -671,18 +698,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
             </div>
         )}
       </div>
-      
-      {showDeleteConfirm && (
-        <div className={`fixed inset-0 z-50 flex items-center justify-center ${styles.modalOverlay} p-4`}>
-           <div className={`rounded-xl shadow-xl w-full max-w-sm p-6 border ${styles.cardBase} ${styles.cardBorder}`}>
-             <h3 className={`text-lg font-bold mb-2 ${styles.text}`}>Move to Trash?</h3>
-             <div className="flex justify-end gap-3 mt-4">
-               <button onClick={() => setShowDeleteConfirm(false)} className={`px-4 py-2 rounded-lg font-medium text-sm ${styles.text}`}>Cancel</button>
-               <button onClick={() => onDelete(note.id)} className="px-4 py-2 rounded-lg bg-red-500 text-white font-medium text-sm">Trash Note</button>
-             </div>
-           </div>
-        </div>
-      )}
     </div>
   );
 };
