@@ -22,6 +22,8 @@
     "@tiptap/starter-kit": "2.2.4",
     "@tiptap/extension-image": "2.2.4",
     "@tiptap/extension-placeholder": "2.2.4",
+    "@tiptap/extension-task-list": "2.2.4",
+    "@tiptap/extension-task-item": "2.2.4",
     "react-virtuoso": "4.7.1"
   },
   "devDependencies": {

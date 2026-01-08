@@ -3,6 +3,8 @@ import { useEditor, EditorContent, ReactNodeViewRenderer, NodeViewWrapper } from
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
+import TaskList from '@tiptap/extension-task-list';
+import TaskItem from '@tiptap/extension-task-item';
 import { Node, mergeAttributes } from '@tiptap/core';
 
 import { Icon } from '../components/Icon';
@@ -135,6 +137,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const editor = useEditor({
     extensions: [
       StarterKit,
+      TaskList,
+      TaskItem.configure({
+        nested: true,
+      }),
       CustomImage.configure({
         inline: true,
         allowBase64: true,
@@ -492,9 +498,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
   };
 
   const noteColorClass = NOTE_COLORS[color][theme];
+  // FIX: Remove min-h-[100dvh] and use h-[100dvh] + overflow-hidden on root to pin toolbar
   const editorBgClass = theme === 'neo-glass' 
     ? 'bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 bg-fixed' 
-    : noteColorClass.split(' ')[0] + ' min-h-[100dvh]'; 
+    : noteColorClass.split(' ')[0]; 
 
   if (isLoadingContent) {
       return (
@@ -525,13 +532,13 @@ export const EditorView: React.FC<EditorViewProps> = ({
   }
 
   return (
-    <div className={`flex flex-col min-h-[100dvh] transition-colors duration-300 animate-slide-in relative ${editorBgClass}`}>
-      <div className={`flex flex-col flex-1 ${theme === 'neo-glass' ? 'bg-white/10 backdrop-blur-3xl' : ''}`}>
+    <div className={`flex flex-col h-[100dvh] overflow-hidden transition-colors duration-300 animate-slide-in relative ${editorBgClass}`}>
+      <div className={`flex flex-col flex-1 h-full ${theme === 'neo-glass' ? 'bg-white/10 backdrop-blur-3xl' : ''}`}>
         
         <input type="file" ref={fileInputRef} accept="image/*" className="hidden" onChange={handleImageUpload} />
 
         {/* Toolbar */}
-        <div className={`flex items-center justify-between sticky top-0 z-10 pt-[calc(0.5rem+env(safe-area-inset-top))] pb-2 px-2 md:px-4 ${styles.header} border-b-0 bg-transparent backdrop-blur-sm`}>
+        <div className={`shrink-0 flex items-center justify-between pt-[calc(0.5rem+env(safe-area-inset-top))] pb-2 px-2 md:px-4 ${styles.header} border-b-0 bg-transparent backdrop-blur-sm z-10`}>
             <button onClick={() => { handleSave(); onBack(); }} className={`p-2 rounded-full ${styles.iconHover} ${styles.text}`}>
             <Icon name="arrowLeft" size={24} />
             </button>
@@ -657,43 +664,117 @@ export const EditorView: React.FC<EditorViewProps> = ({
         </div>
 
         {isEditing && (
-            <div className={`p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] flex items-center justify-between ${styles.cardBase} border-t ${styles.divider} gap-2 px-4`}>
-                <div className="flex gap-1">
-                    <button 
-                        onClick={() => editor?.chain().focus().toggleBold().run()} 
-                        className={`p-2.5 rounded-lg ${editor?.isActive('bold') ? styles.activeItem : `${styles.iconHover} ${styles.text}`}`}
-                    >
-                        <Icon name="bold" size={20} />
-                    </button>
-                    <button 
-                        onClick={() => editor?.chain().focus().toggleItalic().run()} 
-                        className={`p-2.5 rounded-lg ${editor?.isActive('italic') ? styles.activeItem : `${styles.iconHover} ${styles.text}`}`}
-                    >
-                        <Icon name="italic" size={20} />
-                    </button>
-                    <button 
-                        onClick={() => editor?.chain().focus().toggleBulletList().run()} 
-                        className={`p-2.5 rounded-lg ${editor?.isActive('bulletList') ? styles.activeItem : `${styles.iconHover} ${styles.text}`}`}
-                    >
-                        <Icon name="list" size={20} />
-                    </button>
+            <div className={`shrink-0 z-20 flex w-full items-stretch ${styles.cardBase} border-t ${styles.divider} pb-[env(safe-area-inset-bottom)]`}>
+                
+                {/* Scrollable Left Section */}
+                <div className="flex-1 overflow-x-auto no-scrollbar mask-linear-fade">
+                    <div className="flex items-center gap-2 p-2 px-4 min-w-max">
+                        
+                        {/* Headings */}
+                        <div className="flex gap-1 shrink-0">
+                            <button 
+                                onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()} 
+                                className={`p-2.5 rounded-lg ${editor?.isActive('heading', { level: 1 }) ? styles.activeItem : `${styles.iconHover} ${styles.text}`}`}
+                            >
+                                <Icon name="h1" size={20} />
+                            </button>
+                            <button 
+                                onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} 
+                                className={`p-2.5 rounded-lg ${editor?.isActive('heading', { level: 2 }) ? styles.activeItem : `${styles.iconHover} ${styles.text}`}`}
+                            >
+                                <Icon name="h2" size={20} />
+                            </button>
+                            <button 
+                                onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()} 
+                                className={`p-2.5 rounded-lg ${editor?.isActive('heading', { level: 3 }) ? styles.activeItem : `${styles.iconHover} ${styles.text}`}`}
+                            >
+                                <Icon name="h3" size={20} />
+                            </button>
+                            <button 
+                                onClick={() => editor?.chain().focus().toggleHeading({ level: 4 }).run()} 
+                                className={`p-2.5 rounded-lg ${editor?.isActive('heading', { level: 4 }) ? styles.activeItem : `${styles.iconHover} ${styles.text}`}`}
+                            >
+                                <Icon name="h4" size={20} />
+                            </button>
+                            <button 
+                                onClick={() => editor?.chain().focus().toggleHeading({ level: 5 }).run()} 
+                                className={`p-2.5 rounded-lg ${editor?.isActive('heading', { level: 5 }) ? styles.activeItem : `${styles.iconHover} ${styles.text}`}`}
+                            >
+                                <Icon name="h5" size={20} />
+                            </button>
+                        </div>
+
+                        <div className={`h-6 w-px ${styles.divider} bg-gray-300 dark:bg-gray-700 mx-1 shrink-0`} />
+
+                        {/* Formatting */}
+                        <div className="flex gap-1 shrink-0">
+                            <button 
+                                onClick={() => editor?.chain().focus().toggleBold().run()} 
+                                className={`p-2.5 rounded-lg ${editor?.isActive('bold') ? styles.activeItem : `${styles.iconHover} ${styles.text}`}`}
+                            >
+                                <Icon name="bold" size={20} />
+                            </button>
+                            <button 
+                                onClick={() => editor?.chain().focus().toggleItalic().run()} 
+                                className={`p-2.5 rounded-lg ${editor?.isActive('italic') ? styles.activeItem : `${styles.iconHover} ${styles.text}`}`}
+                            >
+                                <Icon name="italic" size={20} />
+                            </button>
+                            <button 
+                                onClick={() => editor?.chain().focus().toggleBulletList().run()} 
+                                className={`p-2.5 rounded-lg ${editor?.isActive('bulletList') ? styles.activeItem : `${styles.iconHover} ${styles.text}`}`}
+                            >
+                                <Icon name="list" size={20} />
+                            </button>
+                            <button 
+                                onClick={() => editor?.chain().focus().toggleTaskList().run()} 
+                                className={`p-2.5 rounded-lg ${editor?.isActive('taskList') ? styles.activeItem : `${styles.iconHover} ${styles.text}`}`}
+                            >
+                                <Icon name="checklist" size={20} />
+                            </button>
+                        </div>
+                        
+                        <div className={`h-6 w-px ${styles.divider} bg-gray-300 dark:bg-gray-700 mx-1 shrink-0`} />
+                        
+                        {/* Media */}
+                        <div className="flex gap-1 shrink-0">
+                             <button onClick={() => fileInputRef.current?.click()} className={`p-2.5 rounded-lg ${styles.iconHover} ${styles.text}`}>
+                                <Icon name="image" size={20} />
+                             </button>
+                             <button 
+                                onClick={toggleRecording} 
+                                className={`p-2.5 rounded-lg transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/30' : `${styles.iconHover} ${styles.text}`}`}
+                             >
+                                <Icon name={isRecording ? "stop" : "mic"} size={20} />
+                             </button>
+                             <button onClick={handleAddLocation} className={`p-2.5 rounded-lg ${styles.iconHover} ${styles.text}`}>
+                                <Icon name="mapPin" size={20} />
+                             </button>
+                        </div>
+                    </div>
                 </div>
-                
-                <div className={`h-6 w-px ${styles.divider} bg-gray-300 dark:bg-gray-700 mx-1`} />
-                
-                <div className="flex gap-1">
-                     <button onClick={() => fileInputRef.current?.click()} className={`p-2.5 rounded-lg ${styles.iconHover} ${styles.text}`}>
-                        <Icon name="image" size={20} />
-                     </button>
-                     <button 
-                        onClick={toggleRecording} 
-                        className={`p-2.5 rounded-lg transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/30' : `${styles.iconHover} ${styles.text}`}`}
-                     >
-                        <Icon name={isRecording ? "stop" : "mic"} size={20} />
-                     </button>
-                     <button onClick={handleAddLocation} className={`p-2.5 rounded-lg ${styles.iconHover} ${styles.text}`}>
-                        <Icon name="mapPin" size={20} />
-                     </button>
+
+                {/* Vertical Divider */}
+                <div className={`w-px my-2 ${styles.divider} bg-gray-200 dark:bg-gray-700 shrink-0`} />
+
+                {/* Fixed Undo/Redo */}
+                <div className="flex items-center gap-1 p-2 pl-3 pr-4 shrink-0 z-10">
+                    <button 
+                            onClick={() => editor?.chain().focus().undo().run()}
+                            disabled={!editor?.can().undo()}
+                            className={`p-2.5 rounded-lg ${!editor?.can().undo() ? 'opacity-30 cursor-not-allowed' : styles.iconHover} ${styles.text}`}
+                            title="Undo"
+                    >
+                        <Icon name="undo" size={20} />
+                    </button>
+                    <button 
+                            onClick={() => editor?.chain().focus().redo().run()}
+                            disabled={!editor?.can().redo()}
+                            className={`p-2.5 rounded-lg ${!editor?.can().redo() ? 'opacity-30 cursor-not-allowed' : styles.iconHover} ${styles.text}`}
+                            title="Redo"
+                    >
+                        <Icon name="redo" size={20} />
+                    </button>
                 </div>
             </div>
         )}

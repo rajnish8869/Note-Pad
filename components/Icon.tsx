@@ -56,7 +56,18 @@ const paths: Record<string, string> = {
   stop: "M6 4h12v16H6z",
   // Selection icons
   circle: "M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z",
-  checkCircle: "M22 11.08V12a10 10 0 1 1-5.93-9.14 M22 4L12 14.01l-3-3"
+  checkCircle: "M22 11.08V12a10 10 0 1 1-5.93-9.14 M22 4L12 14.01l-3-3",
+  // Added Undo/Redo
+  undo: "M3 7v6h6 M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13",
+  redo: "M21 7v6h-6 M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7",
+  // Added Checklist
+  checklist: "M9 5H21M9 12H21M9 19H21M3 5L5 7L8 4M3 12L5 14L8 11M3 19L5 21L8 18",
+  // Heading Icons
+  h1: "M3 5v14M3 12h8M11 5v14M16 8l2-2v12",
+  h2: "M3 5v14M3 12h8M11 5v14 M16 6c3 0 5 1 5 4c0 3-3 4-5 7h5", 
+  h3: "M3 5v14M3 12h8M11 5v14 M16 5h5l-2 4c2 0 3 2 3 4s-3 4-6 4",
+  h4: "M3 5v14M3 12h8M11 5v14 M15 12h6 M20 5v14 M19 5l-4 7",
+  h5: "M3 5v14M3 12h8M11 5v14 M15 5h6 M15 5v5h4c2 0 3 2 3 4s-2 5-5 5h-2"
 };
 
 interface IconProps {
