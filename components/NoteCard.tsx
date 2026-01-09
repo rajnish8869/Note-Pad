@@ -2,7 +2,7 @@
 import React, { useRef } from 'react';
 import { NoteMetadata } from '../types';
 import { Icon } from './Icon';
-import { useTheme, NOTE_COLORS } from '../contexts/ThemeContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface NoteCardProps { 
     note: NoteMetadata; 
@@ -21,9 +21,11 @@ export const NoteCard: React.FC<NoteCardProps> = ({
     note, onClick, onPin, onRestore, onDeleteForever, isTrashView,
     selectionMode, isSelected, onLongPress, className = ""
 }) => {
-  const { theme, styles } = useTheme();
+  const { theme, styles, getNoteColorStyle } = useTheme();
+  
+  // Use helper to resolve color for current theme (handles presets + custom)
   const colorKey = note.color || 'default';
-  const colorClass = NOTE_COLORS[colorKey][theme];
+  const colorClass = getNoteColorStyle(colorKey);
   
   const timerRef = useRef<any>(null);
   const isLongPress = useRef(false);
@@ -33,7 +35,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
         ? 'border-yellow-200/50 shadow-[0_0_15px_rgba(255,255,255,0.15)] bg-white/15' 
         : theme === 'vision' 
             ? 'border-[#2F6BFF] shadow-[0_0_12px_rgba(47,107,255,0.25)]'
-            : 'border-blue-400/50 dark:border-blue-500/50 shadow-md ring-1 ring-blue-500/20')
+            : `border-${styles.primaryText.split('-')[1]}-400/50 shadow-md ring-1 ring-${styles.primaryText.split('-')[1]}-500/20`) // Dynamic ring color
     : 'border-transparent dark:border-gray-800 shadow-sm';
 
   const isLocked = note.isLocked || note.isEncrypted;
@@ -95,7 +97,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
              </div>
         ) : (
              !isTrashView && note.isPinned && (
-                <div className={`absolute top-0 right-0 p-2.5 rounded-bl-2xl shadow-sm ${theme === 'vision' ? 'bg-[#2F6BFF] text-white' : 'bg-blue-500 text-white'}`}>
+                <div className={`absolute top-0 right-0 p-2.5 rounded-bl-2xl shadow-sm ${theme === 'vision' ? 'bg-[#2F6BFF] text-white' : `${styles.primaryBg.replace('/10', '')} ${styles.primaryText.replace('400', '600').replace('text-', 'text-white ')} bg-blue-500 text-white`}`}>
                     <Icon name="pinFilled" size={14} fill={true} />
                 </div>
             )

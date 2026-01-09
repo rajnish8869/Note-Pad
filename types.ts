@@ -56,6 +56,7 @@ export interface Folder {
   id: string;
   name: string;
   createdAt: number;
+  updatedAt?: number;
 }
 
 export interface UserProfile {
@@ -65,7 +66,48 @@ export interface UserProfile {
   imageUrl?: string;
 }
 
-export type Theme = 'classic' | 'dark' | 'neo-glass' | 'vision';
+// Full definition of all style properties required for a theme
+export interface ThemeDefinition {
+  bg: string;
+  text: string;
+  secondaryText: string;
+  cardBase: string;
+  cardBorder: string;
+  header: string;
+  drawer: string;
+  searchBar: string;
+  searchBarText: string;
+  searchBarPlaceholder: string;
+  iconHover: string;
+  fab: string;
+  divider: string;
+  input: string;
+  inputText: string;
+  modalOverlay: string;
+  primaryText: string;
+  primaryBg: string;
+  dangerText: string;
+  dangerBg: string;
+  successText: string;
+  activeItem: string;
+  lockedBg: string;
+  lockedBorder: string;
+  tagBg: string;
+  tagText: string;
+  buttonSecondary: string;
+  statusBarColor: string;
+  isDark: boolean; // Helper for editor prose inversion
+}
+
+// Meta data for custom themes
+export interface CustomThemeData {
+  id: string;
+  name: string;
+  base: 'light' | 'dim' | 'dark';
+  accent: string; // e.g., 'blue', 'red', 'purple'
+}
+
+export type Theme = string; // Changed from union to string to support IDs
 
 // Updated ViewState to support specific folder views or trash
 export type ViewState = 'LIST' | 'EDITOR' | 'SETTINGS' | 'TRASH' | 'FOLDER' | 'TAG';

@@ -86,7 +86,7 @@ const AudioExtension = Node.create({
 export const EditorView: React.FC<EditorViewProps> = ({ 
     note, folders, initialEditMode, activeNoteKey, onSave, onBack, onDelete, onLockToggle, initialSearchQuery
 }) => {
-  const { theme, styles } = useTheme();
+  const { theme, styles, getNoteColorStyle } = useTheme();
   
   // State
   const [isEditing, setIsEditing] = useState(initialEditMode);
@@ -140,7 +140,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     onUpdate: () => setIsDirty(true),
     editorProps: {
       attributes: {
-        class: `prose max-w-none focus:outline-none ${theme === 'dark' || theme === 'neo-glass' || theme === 'vision' ? 'prose-invert' : ''}`,
+        class: `prose max-w-none focus:outline-none ${styles.isDark ? 'prose-invert' : ''}`, // Simplistic check, logic handled by context now
       },
     },
   });
@@ -468,7 +468,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
       return editor.storage.characterCount?.words?.() ?? editor.getText().split(/\s+/).filter(w => w.length > 0).length;
   }, [editor, isDirty]); 
 
-  const noteColorClass = NOTE_COLORS[color][theme];
+  // Use helper to resolve color based on current theme
+  const noteColorClass = getNoteColorStyle(color);
   const editorBgClass = theme === 'neo-glass' ? 'bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 bg-fixed' : noteColorClass.split(' ')[0]; 
 
   if (isLoadingContent || (!isDecrypted && !decryptionError)) {
@@ -678,7 +679,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                             <button 
                                 key={c} 
                                 onClick={() => { setColor(c); setIsDirty(true); }} 
-                                className={`w-10 h-10 rounded-full border-2 transition-transform active:scale-90 shadow-sm ${NOTE_COLORS[c].classic.split(' ')[0]} ${color === c ? 'border-blue-500 scale-110' : 'border-transparent'}`} 
+                                className={`w-10 h-10 rounded-full border-2 transition-transform active:scale-90 shadow-sm ${getNoteColorStyle(c).split(' ')[0]} ${color === c ? 'border-blue-500 scale-110' : 'border-transparent'}`} 
                             />
                         ))}
                     </div>

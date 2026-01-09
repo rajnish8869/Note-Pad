@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Icon } from './Icon';
 import { NoteSecurity, Theme } from '../types';
 import { SecurityService } from '../services/SecurityService';
-import { SECURITY_STYLES } from '../contexts/ThemeContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface Props { 
     onComplete: (key: CryptoKey, security: NoteSecurity, rawPin: string) => void; 
@@ -10,12 +11,14 @@ interface Props {
     theme: Theme;
 }
 
-export const SecuritySetupModal: React.FC<Props> = ({ onComplete, onCancel, theme }) => {
+export const SecuritySetupModal: React.FC<Props> = ({ onComplete, onCancel }) => {
+    const { getSecurityStyles } = useTheme();
+    const s = getSecurityStyles();
+    
     const [pin, setPin] = useState("");
     const [confirmPin, setConfirmPin] = useState("");
     const [step, setStep] = useState(1);
     const [error, setError] = useState("");
-    const s = SECURITY_STYLES[theme];
     const PIN_LENGTH = 4;
 
     const handleNumClick = (num: string) => {

@@ -1,20 +1,23 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Icon } from './Icon';
 import { NoteSecurity, Theme } from '../types';
 import { NativeBiometric } from '@capgo/capacitor-native-biometric';
 import { SecurityService } from '../services/SecurityService';
-import { SECURITY_STYLES } from '../contexts/ThemeContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 export const AuthModal: React.FC<{ 
     onUnlock: (key: CryptoKey, rawPin?: string) => void; 
     onCancel?: () => void; 
     customSecurity?: NoteSecurity;
     theme: Theme;
-}> = ({ onUnlock, onCancel, customSecurity, theme }) => {
+}> = ({ onUnlock, onCancel, customSecurity }) => {
+    const { getSecurityStyles } = useTheme();
+    const s = getSecurityStyles();
+    
     const [pin, setPin] = useState("");
     const [error, setError] = useState(false);
     const [bioAvailable, setBioAvailable] = useState(false);
-    const s = SECURITY_STYLES[theme];
 
     const targetLength = useMemo(() => {
         if (customSecurity && customSecurity.pinLength) return customSecurity.pinLength;
