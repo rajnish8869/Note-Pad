@@ -97,7 +97,7 @@ export const AuthModal: React.FC<{
             >
                 {bioAvailable && !customSecurity ? (
                      <div className="flex flex-col items-center gap-2">
-                        <Icon name="fingerprint" size={56} />
+                        <Icon name="scan" size={56} />
                         <span className="text-xs opacity-50">Tap for Biometrics</span>
                      </div>
                 ) : (
