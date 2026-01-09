@@ -16,6 +16,7 @@ import { Note, EncryptedData, Folder } from '../types';
 import { SecurityService } from '../services/SecurityService';
 import { StorageService } from '../services/StorageService';
 import { useTheme, NOTE_COLORS } from '../contexts/ThemeContext';
+import { AlertModal } from '../components/AlertModal';
 
 interface EditorViewProps { 
   note: Note; 
@@ -118,6 +119,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [isDirty, setIsDirty] = useState(false);
   const skipSaveOnUnmount = useRef(false);
   
+  // Alert State
+  const [alertConfig, setAlertConfig] = useState({ isOpen: false, title: '', message: '' });
+
   // Refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -455,7 +459,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
               };
               mediaRecorderRef.current.start();
               setIsRecording(true);
-          } catch (err) { alert("Could not access microphone."); }
+          } catch (err) { 
+              setAlertConfig({ isOpen: true, title: "Microphone Error", message: "Could not access microphone." });
+          }
       }
   };
 
@@ -463,7 +469,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
       if (navigator.share) {
           const plainText = editor?.getText() || note.plainTextPreview;
           await navigator.share({ title: title || 'CloudPad Note', text: `${title}\n\n${plainText}` });
-      } else { alert("Web Share API not supported on this device."); }
+      } else { 
+          setAlertConfig({ isOpen: true, title: "Not Supported", message: "Web Share API not supported on this device." });
+      }
   };
 
   const wordCount = useMemo(() => {
@@ -727,6 +735,12 @@ export const EditorView: React.FC<EditorViewProps> = ({
                 </div>
             </div>
         </BottomSheet>
+        <AlertModal 
+            isOpen={alertConfig.isOpen}
+            onClose={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
+            title={alertConfig.title}
+            message={alertConfig.message}
+        />
       </div>
     </div>
   );

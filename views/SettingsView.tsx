@@ -5,6 +5,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useNotes } from '../contexts/NotesContext';
 import { useSecurity } from '../contexts/SecurityContext';
 import { BottomSheet } from '../components/BottomSheet';
+import { AlertModal } from '../components/AlertModal';
 
 interface Props {
   onBack: () => void;
@@ -23,6 +24,9 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
   const [newThemeBase, setNewThemeBase] = useState<'light'|'dim'|'dark'>('dark');
   const [newThemeAccent, setNewThemeAccent] = useState('blue');
   
+  // Alert State
+  const [alertConfig, setAlertConfig] = useState({ isOpen: false, title: '', message: '' });
+  
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -32,9 +36,9 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
           const content = e.target?.result as string;
           try {
               await importData(content);
-              alert("Backup imported successfully!");
+              setAlertConfig({ isOpen: true, title: "Success", message: "Backup imported successfully!" });
           } catch (err) {
-              alert("Failed to import backup. Please ensure it is a valid JSON file.");
+              setAlertConfig({ isOpen: true, title: "Import Failed", message: "Failed to import backup. Please ensure it is a valid JSON file." });
           }
       };
       reader.readAsText(file);
@@ -44,7 +48,7 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
 
   const saveNewTheme = () => {
       if (!newThemeName.trim()) {
-          alert("Please enter a theme name");
+          setAlertConfig({ isOpen: true, title: "Name Required", message: "Please enter a theme name." });
           return;
       }
       addCustomTheme(newThemeName, newThemeBase, newThemeAccent);
@@ -267,6 +271,12 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
               </button>
           </div>
       </BottomSheet>
+      <AlertModal 
+          isOpen={alertConfig.isOpen}
+          onClose={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
+          title={alertConfig.title}
+          message={alertConfig.message}
+      />
     </div>
   );
 };

@@ -10,6 +10,7 @@ import { FAB } from './components/FAB';
 import { AuthModal } from './components/AuthModal';
 import { SecuritySetupModal } from './components/SecuritySetupModal';
 import { LockSelectionModal } from './components/LockSelectionModal';
+import { AlertModal } from './components/AlertModal';
 import { EditorView } from './views/EditorView';
 import { NoteListView } from './views/NoteListView';
 import { SettingsView } from './views/SettingsView';
@@ -40,18 +41,21 @@ const MainApp = () => {
   
   const [showLockSelection, setShowLockSelection] = useState(false);
   const [isLockingGlobal, setIsLockingGlobal] = useState(false); 
+  
+  // Alert State
+  const [alertConfig, setAlertConfig] = useState({ isOpen: false, title: '', message: '' });
 
   const stateRef = useRef({
     view, isDrawerOpen, showAuthModal, showSecuritySetup, 
-    showLockSelection, isAppLocked, selectionMode
+    showLockSelection, isAppLocked, selectionMode, alertConfig
   });
 
   useEffect(() => {
     stateRef.current = { 
         view, isDrawerOpen, showAuthModal, showSecuritySetup, 
-        showLockSelection, isAppLocked, selectionMode
+        showLockSelection, isAppLocked, selectionMode, alertConfig
     };
-  }, [view, isDrawerOpen, showAuthModal, showSecuritySetup, showLockSelection, isAppLocked, selectionMode]);
+  }, [view, isDrawerOpen, showAuthModal, showSecuritySetup, showLockSelection, isAppLocked, selectionMode, alertConfig]);
 
   useEffect(() => {
     const backListener = CapacitorApp.addListener('backButton', ({ canGoBack }) => {
@@ -59,6 +63,11 @@ const MainApp = () => {
         
         if (state.isAppLocked) {
             CapacitorApp.exitApp();
+            return;
+        }
+
+        if (state.alertConfig.isOpen) {
+            setAlertConfig(prev => ({ ...prev, isOpen: false }));
             return;
         }
 
@@ -230,7 +239,11 @@ const MainApp = () => {
   const handleSelectGlobalLock = () => {
       setShowLockSelection(false);
       if (!hasSecuritySetup) {
-          alert("Please setup a Global PIN in Settings first.");
+          setAlertConfig({
+              isOpen: true,
+              title: "Setup Required",
+              message: "Please setup a Global PIN in Settings first."
+          });
           return;
       }
 
@@ -296,6 +309,12 @@ const MainApp = () => {
                     hasGlobalSecurity={hasSecuritySetup}
                 />
             )}
+            <AlertModal 
+                isOpen={alertConfig.isOpen}
+                onClose={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
+                title={alertConfig.title}
+                message={alertConfig.message}
+            />
         </>
       );
   }
