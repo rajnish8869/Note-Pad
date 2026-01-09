@@ -2,9 +2,18 @@
 import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import { Theme, ThemeDefinition, CustomThemeData } from '../types';
 
+// Full definition of all style properties required for a theme
+// Extended to support dynamic refactoring requirements
+interface ExtendedThemeDefinition extends ThemeDefinition {
+  primaryRing: string;
+  successBg: string;
+  accentColor: string; // Hex for CSS Vars
+  profileIconBg: string;
+}
+
 // --- Preset Themes ---
 
-const CLASSIC_THEME: ThemeDefinition = {
+const CLASSIC_THEME: ExtendedThemeDefinition = {
   bg: 'bg-gray-50',
   text: 'text-gray-900',
   secondaryText: 'text-gray-500',
@@ -23,9 +32,11 @@ const CLASSIC_THEME: ThemeDefinition = {
   modalOverlay: 'bg-black/20 backdrop-blur-sm',
   primaryText: 'text-blue-600',
   primaryBg: 'bg-blue-50',
+  primaryRing: 'ring-blue-500',
   dangerText: 'text-red-600',
   dangerBg: 'bg-red-50 hover:bg-red-100',
   successText: 'text-green-600',
+  successBg: 'bg-green-100',
   activeItem: 'bg-blue-50 text-blue-600 font-medium',
   lockedBg: 'bg-gray-50 border-gray-200',
   lockedBorder: 'border-gray-200',
@@ -33,10 +44,12 @@ const CLASSIC_THEME: ThemeDefinition = {
   tagText: 'text-gray-600',
   buttonSecondary: 'bg-gray-100 hover:bg-gray-200 text-gray-900',
   statusBarColor: '#ffffff',
+  accentColor: '#2563eb', // blue-600
+  profileIconBg: 'bg-gradient-to-br from-blue-400 to-blue-600 text-white',
   isDark: false,
 };
 
-const DARK_THEME: ThemeDefinition = {
+const DARK_THEME: ExtendedThemeDefinition = {
   bg: 'bg-[#121212]',
   text: 'text-gray-100',
   secondaryText: 'text-gray-400',
@@ -55,9 +68,11 @@ const DARK_THEME: ThemeDefinition = {
   modalOverlay: 'bg-black/60 backdrop-blur-sm',
   primaryText: 'text-blue-400',
   primaryBg: 'bg-blue-500/10',
+  primaryRing: 'ring-blue-500',
   dangerText: 'text-red-400',
   dangerBg: 'bg-red-900/20 hover:bg-red-900/30',
   successText: 'text-green-400',
+  successBg: 'bg-green-900/20',
   activeItem: 'bg-blue-500/10 text-blue-400 font-medium',
   lockedBg: 'bg-black/20 border-gray-800',
   lockedBorder: 'border-gray-800',
@@ -65,11 +80,13 @@ const DARK_THEME: ThemeDefinition = {
   tagText: 'text-gray-300',
   buttonSecondary: 'bg-gray-800 hover:bg-gray-700 text-gray-200',
   statusBarColor: '#1e1e1e',
+  accentColor: '#3b82f6', // blue-500
+  profileIconBg: 'bg-gradient-to-br from-blue-500 to-blue-700 text-white',
   isDark: true,
 };
 
 // 10 Preset Themes
-const PRESET_THEMES: Record<string, ThemeDefinition> = {
+const PRESET_THEMES: Record<string, ExtendedThemeDefinition> = {
   classic: CLASSIC_THEME,
   dark: DARK_THEME,
   'neo-glass': {
@@ -91,9 +108,11 @@ const PRESET_THEMES: Record<string, ThemeDefinition> = {
     modalOverlay: 'bg-black/40 backdrop-blur-md',
     primaryText: 'text-white',
     primaryBg: 'bg-white/20',
+    primaryRing: 'ring-white/50',
     dangerText: 'text-red-200',
     dangerBg: 'bg-red-500/20 hover:bg-red-500/30',
     successText: 'text-green-300',
+    successBg: 'bg-green-500/20',
     activeItem: 'bg-white/20 text-white shadow-[0_0_15px_rgba(255,255,255,0.2)] font-medium border border-white/10',
     lockedBg: 'bg-black/10 border-white/10',
     lockedBorder: 'border-white/10',
@@ -101,6 +120,8 @@ const PRESET_THEMES: Record<string, ThemeDefinition> = {
     tagText: 'text-white',
     buttonSecondary: 'bg-white/10 hover:bg-white/20 text-white border border-white/10',
     statusBarColor: '#6366f1',
+    accentColor: '#ffffff',
+    profileIconBg: 'bg-white/20 text-white',
     isDark: true,
   },
   vision: {
@@ -122,9 +143,11 @@ const PRESET_THEMES: Record<string, ThemeDefinition> = {
     modalOverlay: 'bg-black/60 backdrop-blur-md',
     primaryText: 'text-[#2F6BFF]',
     primaryBg: 'bg-[#2F6BFF]/10',
+    primaryRing: 'ring-[#2F6BFF]',
     dangerText: 'text-red-400',
     dangerBg: 'bg-red-900/20 hover:bg-red-900/30',
     successText: 'text-green-400',
+    successBg: 'bg-green-900/20',
     activeItem: 'bg-[#2F6BFF]/20 text-[#2F6BFF] border border-[#2F6BFF]/30 font-medium',
     lockedBg: 'bg-[#0B132B] border-[#1F2C4D]',
     lockedBorder: 'border-[#1F2C4D]',
@@ -132,6 +155,8 @@ const PRESET_THEMES: Record<string, ThemeDefinition> = {
     tagText: 'text-[#7F8FB0]',
     buttonSecondary: 'bg-[#141F3A] hover:bg-[#24345C] text-[#E6ECF5] border border-[#2A3B66]',
     statusBarColor: '#0B132B',
+    accentColor: '#2F6BFF',
+    profileIconBg: 'bg-[#2F6BFF] text-white',
     isDark: true,
   },
   midnight: { // AMOLED Black
@@ -142,6 +167,7 @@ const PRESET_THEMES: Record<string, ThemeDefinition> = {
     header: 'bg-black/90 backdrop-blur-md border-b border-gray-900',
     drawer: 'bg-black border-r border-gray-900',
     statusBarColor: '#000000',
+    accentColor: '#3b82f6',
     isDark: true,
   },
   forest: {
@@ -153,9 +179,14 @@ const PRESET_THEMES: Record<string, ThemeDefinition> = {
     drawer: 'bg-[#051a10] border-r border-[#143d29]',
     primaryText: 'text-emerald-400',
     primaryBg: 'bg-emerald-500/10',
+    primaryRing: 'ring-emerald-500',
+    successText: 'text-emerald-400',
+    successBg: 'bg-emerald-500/10',
     activeItem: 'bg-emerald-500/10 text-emerald-400 font-medium',
     fab: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl',
     statusBarColor: '#051a10',
+    accentColor: '#10b981', // Emerald 500
+    profileIconBg: 'bg-gradient-to-br from-emerald-500 to-emerald-700 text-white',
     isDark: true,
   },
   ocean: {
@@ -167,9 +198,12 @@ const PRESET_THEMES: Record<string, ThemeDefinition> = {
     drawer: 'bg-[#0f172a] border-r border-[#1e293b]',
     primaryText: 'text-cyan-400',
     primaryBg: 'bg-cyan-500/10',
+    primaryRing: 'ring-cyan-500',
     activeItem: 'bg-cyan-500/10 text-cyan-400 font-medium',
     fab: 'bg-cyan-600 hover:bg-cyan-700 text-white shadow-xl',
     statusBarColor: '#0f172a',
+    accentColor: '#06b6d4', // Cyan 500
+    profileIconBg: 'bg-gradient-to-br from-cyan-500 to-cyan-700 text-white',
     isDark: true,
   },
   sunset: {
@@ -181,9 +215,12 @@ const PRESET_THEMES: Record<string, ThemeDefinition> = {
     drawer: 'bg-[#2a1b1b] border-r border-[#3d2424]',
     primaryText: 'text-orange-400',
     primaryBg: 'bg-orange-500/10',
+    primaryRing: 'ring-orange-500',
     activeItem: 'bg-orange-500/10 text-orange-400 font-medium',
     fab: 'bg-gradient-to-r from-orange-500 to-rose-500 text-white shadow-xl',
     statusBarColor: '#2a1b1b',
+    accentColor: '#f97316', // Orange 500
+    profileIconBg: 'bg-gradient-to-r from-orange-500 to-rose-500 text-white',
     isDark: true,
   },
   coffee: {
@@ -197,9 +234,12 @@ const PRESET_THEMES: Record<string, ThemeDefinition> = {
     secondaryText: 'text-amber-200/50',
     primaryText: 'text-amber-400',
     primaryBg: 'bg-amber-500/10',
+    primaryRing: 'ring-amber-500',
     activeItem: 'bg-amber-500/10 text-amber-400 font-medium',
     fab: 'bg-amber-700 hover:bg-amber-800 text-white shadow-xl',
     statusBarColor: '#1c1917',
+    accentColor: '#f59e0b', // Amber 500
+    profileIconBg: 'bg-gradient-to-br from-amber-600 to-amber-800 text-white',
     isDark: true,
   },
   lavender: {
@@ -213,16 +253,19 @@ const PRESET_THEMES: Record<string, ThemeDefinition> = {
     secondaryText: 'text-purple-200/50',
     primaryText: 'text-purple-400',
     primaryBg: 'bg-purple-500/10',
+    primaryRing: 'ring-purple-500',
     activeItem: 'bg-purple-500/10 text-purple-400 font-medium',
     fab: 'bg-purple-600 hover:bg-purple-700 text-white shadow-xl',
     statusBarColor: '#1e1b2e',
+    accentColor: '#a855f7', // Purple 500
+    profileIconBg: 'bg-gradient-to-br from-purple-500 to-purple-700 text-white',
     isDark: true,
   },
 };
 
 // --- Theme Generator for Custom Themes ---
 
-const generateThemeDefinition = (base: 'light' | 'dim' | 'dark', accent: string): ThemeDefinition => {
+const generateThemeDefinition = (base: 'light' | 'dim' | 'dark', accent: string): ExtendedThemeDefinition => {
   // 1. Determine Base
   let baseDef = CLASSIC_THEME;
   if (base === 'dim') {
@@ -250,38 +293,43 @@ const generateThemeDefinition = (base: 'light' | 'dim' | 'dark', accent: string)
   }
 
   // 2. Apply Accent
-  // Map simple color names to Tailwind ranges
-  const accentMap: Record<string, { main: string, text: string, bg: string, fab: string }> = {
-      blue: { main: 'blue-500', text: 'blue-400', bg: 'blue-500/10', fab: 'bg-blue-600' },
-      red: { main: 'red-500', text: 'red-400', bg: 'red-500/10', fab: 'bg-red-600' },
-      green: { main: 'emerald-500', text: 'emerald-400', bg: 'emerald-500/10', fab: 'bg-emerald-600' },
-      purple: { main: 'purple-500', text: 'purple-400', bg: 'purple-500/10', fab: 'bg-purple-600' },
-      orange: { main: 'orange-500', text: 'orange-400', bg: 'orange-500/10', fab: 'bg-orange-600' },
-      pink: { main: 'pink-500', text: 'pink-400', bg: 'pink-500/10', fab: 'bg-pink-600' },
-      teal: { main: 'teal-500', text: 'teal-400', bg: 'teal-500/10', fab: 'bg-teal-600' },
-      yellow: { main: 'yellow-500', text: 'yellow-400', bg: 'yellow-500/10', fab: 'bg-yellow-600' },
-      indigo: { main: 'indigo-500', text: 'indigo-400', bg: 'indigo-500/10', fab: 'bg-indigo-600' },
-      rose: { main: 'rose-500', text: 'rose-400', bg: 'rose-500/10', fab: 'bg-rose-600' },
-      cyan: { main: 'cyan-500', text: 'cyan-400', bg: 'cyan-500/10', fab: 'bg-cyan-600' },
-      lime: { main: 'lime-500', text: 'lime-400', bg: 'lime-500/10', fab: 'bg-lime-600' },
+  // Map simple color names to Tailwind ranges & Hex for CSS variables
+  const accentMap: Record<string, { main: string, text: string, bg: string, fab: string, hex: string }> = {
+      blue: { main: 'blue-500', text: 'blue-400', bg: 'blue-500/10', fab: 'bg-blue-600', hex: '#3b82f6' },
+      red: { main: 'red-500', text: 'red-400', bg: 'red-500/10', fab: 'bg-red-600', hex: '#ef4444' },
+      green: { main: 'emerald-500', text: 'emerald-400', bg: 'emerald-500/10', fab: 'bg-emerald-600', hex: '#10b981' },
+      purple: { main: 'purple-500', text: 'purple-400', bg: 'purple-500/10', fab: 'bg-purple-600', hex: '#a855f7' },
+      orange: { main: 'orange-500', text: 'orange-400', bg: 'orange-500/10', fab: 'bg-orange-600', hex: '#f97316' },
+      pink: { main: 'pink-500', text: 'pink-400', bg: 'pink-500/10', fab: 'bg-pink-600', hex: '#ec4899' },
+      teal: { main: 'teal-500', text: 'teal-400', bg: 'teal-500/10', fab: 'bg-teal-600', hex: '#14b8a6' },
+      yellow: { main: 'yellow-500', text: 'yellow-400', bg: 'yellow-500/10', fab: 'bg-yellow-600', hex: '#eab308' },
+      indigo: { main: 'indigo-500', text: 'indigo-400', bg: 'indigo-500/10', fab: 'bg-indigo-600', hex: '#6366f1' },
+      rose: { main: 'rose-500', text: 'rose-400', bg: 'rose-500/10', fab: 'bg-rose-600', hex: '#f43f5e' },
+      cyan: { main: 'cyan-500', text: 'cyan-400', bg: 'cyan-500/10', fab: 'bg-cyan-600', hex: '#06b6d4' },
+      lime: { main: 'lime-500', text: 'lime-400', bg: 'lime-500/10', fab: 'bg-lime-600', hex: '#84cc16' },
   };
 
   const a = accentMap[accent] || accentMap.blue;
   const isDark = base !== 'light';
 
-  return {
+  const generated: ExtendedThemeDefinition = {
       ...baseDef,
       primaryText: `text-${a.text}`,
       primaryBg: `bg-${a.bg}`,
+      primaryRing: `ring-${a.main}`,
       activeItem: `bg-${a.bg} text-${a.text} font-medium border border-${a.text}/20`,
       fab: `${a.fab} text-white shadow-xl hover:opacity-90`,
+      accentColor: a.hex,
+      profileIconBg: `bg-${a.main} text-white`,
       // For light mode, we might want slightly different text colors
       ...( !isDark ? {
           primaryText: `text-${accent}-600`,
           primaryBg: `bg-${accent}-50`,
           activeItem: `bg-${accent}-50 text-${accent}-600 font-medium`,
+          profileIconBg: `bg-gradient-to-br from-${accent}-400 to-${accent}-600 text-white`,
       } : {})
   };
+  return generated;
 };
 
 // --- Context Setup ---
@@ -375,7 +423,7 @@ const getNoteColor = (color: string, themeId: string, isDark: boolean): string =
 interface ThemeContextType {
   theme: Theme;
   setTheme: (t: Theme) => void;
-  styles: ThemeDefinition;
+  styles: ExtendedThemeDefinition;
   
   // Custom Theme Features
   customThemes: CustomThemeData[];
@@ -421,7 +469,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return CLASSIC_THEME;
   }, [themeId, customThemes]);
 
-  const applyDomTheme = (def: ThemeDefinition, id: string) => {
+  const applyDomTheme = (def: ExtendedThemeDefinition, id: string) => {
     const root = window.document.documentElement;
     
     // Simple dark mode toggle for Tailwind 'dark:' modifier
@@ -436,6 +484,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         document.head.appendChild(metaThemeColor);
     }
     metaThemeColor.setAttribute("content", def.statusBarColor);
+
+    // Set CSS Variable for dynamic colors (like checkbox ticks)
+    root.style.setProperty('--primary-color', def.accentColor);
 
     localStorage.setItem('theme', id);
   };

@@ -17,6 +17,7 @@ interface NotesContextType {
   updateNote: (note: Note) => void;
   deleteNote: (id: string) => void;
   deleteForever: (id: string) => void;
+  deleteNotesForever: (ids: string[]) => void;
   restoreNote: (id: string) => void;
   createFolder: (name: string) => void;
   
@@ -143,6 +144,25 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
   };
 
+  const deleteNotesForever = async (ids: string[]) => {
+      console.log("[NotesContext] deleteNotesForever", ids);
+      if (!isIncognito) {
+          // Optimistic update for responsiveness
+          setNotes(prev => prev.filter(n => !ids.includes(n.id)));
+          
+          try {
+              await StorageService.deleteNotes(ids);
+              console.log("[NotesContext] Successfully deleted notes from storage");
+          } catch(e) {
+              console.error("[NotesContext] Error deleting notes from storage", e);
+              // In a real app, we might revert state here or show an error
+              await reloadData();
+          }
+      } else {
+          setIncognitoNotes(prev => prev.filter(n => !ids.includes(n.id)));
+      }
+  };
+
   const restoreNote = (id: string) => {
       setNotes(prev => prev.map(n => n.id === id ? { ...n, isTrashed: false, deletedAt: undefined } : n));
   };
@@ -172,6 +192,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateNote,
         deleteNote,
         deleteForever,
+        deleteNotesForever,
         restoreNote,
         createFolder,
         toggleIncognito: setIsIncognito,

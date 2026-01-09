@@ -34,14 +34,15 @@ const ImageNode = (props: any) => {
   const { node, selected } = props;
   const [src, setSrc] = useState(node.attrs.src);
   const [error, setError] = useState(false);
+  const { styles } = useTheme();
 
   useEffect(() => { setSrc(node.attrs.src); setError(false); }, [node.attrs.src]);
 
   return (
     <NodeViewWrapper className="my-4">
-      <div className={`relative rounded-2xl overflow-hidden transition-all ${selected ? 'ring-2 ring-blue-500' : ''}`}>
+      <div className={`relative rounded-2xl overflow-hidden transition-all ${selected ? `ring-2 ${styles.primaryRing}` : ''}`}>
         {error ? (
-            <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-500 text-sm flex items-center gap-2 border border-red-200 dark:border-red-800 rounded-xl select-none">
+            <div className={`p-4 text-sm flex items-center gap-2 border rounded-xl select-none ${styles.dangerBg} ${styles.dangerText} border-red-200 dark:border-red-800`}>
                 <Icon name="image" size={20} />
                 <span className="opacity-70 text-xs">Image failed to load</span>
             </div>
@@ -71,8 +72,10 @@ const AudioExtension = Node.create({
   addAttributes() { return { src: { default: null }, 'data-filename': { default: null } } },
   parseHTML() { return [{ tag: 'audio' }] },
   renderHTML({ HTMLAttributes }) {
+      // NOTE: Tailwind classes for color in renderHTML must be hardcoded or generic enough, 
+      // but we can use CSS variables injected by ThemeContext for the primary color.
     return ['div', { class: 'my-2 p-3 bg-gray-100 dark:bg-gray-800 rounded-2xl flex items-center gap-3 border border-black/5' },
-      ['div', { class: 'p-2 bg-blue-500 rounded-full text-white' }, 
+      ['div', { class: 'p-2 rounded-full text-white', style: 'background-color: var(--primary-color)' }, 
         ['svg', { xmlns: "http://www.w3.org/2000/svg", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round" }, ['path', { d: "M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" }]]
       ],
       ['div', { class: 'flex-1' },
@@ -517,7 +520,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                         <button onClick={() => editor?.chain().focus().redo().run()} disabled={!editor?.can().redo()} className={`p-3 rounded-full opacity-70 ${!editor?.can().redo() ? 'opacity-30' : ''} ${styles.text}`}><Icon name="redo" size={20} /></button>
                         <button 
                             onClick={() => { handleSave(); setIsEditing(false); triggerHaptic(20); }} 
-                            className={`ml-2 px-4 py-2 rounded-full font-bold text-sm bg-black dark:bg-white text-white dark:text-black shadow-lg active:scale-95 transition-all`}
+                            className={`ml-2 px-4 py-2 rounded-full font-bold text-sm ${styles.fab} shadow-lg active:scale-95 transition-all`}
                         >
                             Done
                         </button>
@@ -645,7 +648,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                         <div className={`h-6 w-px ${styles.divider} bg-gray-300 dark:bg-gray-700 mx-2`} />
                         
                         <button onClick={() => fileInputRef.current?.click()} className={`p-3 rounded-xl ${styles.iconHover} ${styles.text}`}><Icon name="image" size={22} /></button>
-                        <button onClick={toggleRecording} className={`p-3 rounded-xl transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse' : `${styles.iconHover} ${styles.text}`}`}><Icon name={isRecording ? "stop" : "mic"} size={22} /></button>
+                        <button onClick={toggleRecording} className={`p-3 rounded-xl transition-all ${isRecording ? `${styles.dangerBg} ${styles.dangerText} animate-pulse` : `${styles.iconHover} ${styles.text}`}`}><Icon name={isRecording ? "stop" : "mic"} size={22} /></button>
                         <button onClick={() => { if ("geolocation" in navigator) navigator.geolocation.getCurrentPosition(pos => { setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setIsDirty(true); }) }} className={`p-3 rounded-xl ${styles.iconHover} ${styles.text}`}><Icon name="mapPin" size={22} /></button>
                         
                         {/* Read Mode Switch */}
@@ -665,7 +668,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                          <Icon name={note.isLocked ? "unlock" : "lock"} size={24} className={note.isLocked ? styles.dangerText : styles.text} />
                          <span className={`text-xs font-bold ${note.isLocked ? styles.dangerText : styles.text}`}>{note.isLocked ? "Unlock Note" : "Lock Note"}</span>
                      </button>
-                     <button onClick={() => { onDelete(note.id); }} className={`p-4 rounded-2xl flex flex-col items-center justify-center gap-2 border transition-all active:scale-95 ${styles.cardBase} ${styles.cardBorder}`}>
+                     <button onClick={() => { skipSaveOnUnmount.current = true; onDelete(note.id); }} className={`p-4 rounded-2xl flex flex-col items-center justify-center gap-2 border transition-all active:scale-95 ${styles.cardBase} ${styles.cardBorder}`}>
                          <Icon name="trash" size={24} className={styles.dangerText} />
                          <span className={`text-xs font-bold ${styles.dangerText}`}>Delete</span>
                      </button>
@@ -679,7 +682,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
                             <button 
                                 key={c} 
                                 onClick={() => { setColor(c); setIsDirty(true); }} 
-                                className={`w-10 h-10 rounded-full border-2 transition-transform active:scale-90 shadow-sm ${getNoteColorStyle(c).split(' ')[0]} ${color === c ? 'border-blue-500 scale-110' : 'border-transparent'}`} 
+                                className={`w-10 h-10 rounded-full border-2 transition-transform active:scale-90 shadow-sm ${getNoteColorStyle(c).split(' ')[0]} ${color === c ? `border-${styles.accentColor} scale-110` : 'border-transparent'}`} 
+                                style={color === c ? { borderColor: styles.accentColor } : {}}
                             />
                         ))}
                     </div>
@@ -719,7 +723,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                 <div className={`p-4 rounded-xl text-xs space-y-2 opacity-60 ${styles.text} ${styles.cardBase} border ${styles.cardBorder}`}>
                     <div className="flex justify-between"><span>Created</span> <span>{new Date(note.createdAt).toLocaleString()}</span></div>
                     <div className="flex justify-between"><span>Words</span> <span>{wordCount}</span></div>
-                    {note.isSynced && <div className="flex justify-between"><span className="text-green-500 font-bold">Synced</span> <Icon name="check" size={14} className="text-green-500" /></div>}
+                    {note.isSynced && <div className="flex justify-between"><span className={`${styles.successText} font-bold`}>Synced</span> <Icon name="check" size={14} className={styles.successText} /></div>}
                 </div>
             </div>
         </BottomSheet>

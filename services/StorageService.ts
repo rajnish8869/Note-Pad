@@ -179,6 +179,26 @@ export class StorageService {
       await localforage.removeItem(`${NOTE_CONTENT_PREFIX}enc_${id}`);
   }
 
+  static async deleteNotes(ids: string[]): Promise<void> {
+      console.log("[StorageService] deleteNotes", ids);
+      try {
+          // Remove from index
+          const index = await this.getNotesMetadata();
+          const newIndex = index.filter(n => !ids.includes(n.id));
+          await this.saveNotesMetadata(newIndex);
+
+          // Remove content (Parallel for performance)
+          await Promise.all(ids.map(async (id) => {
+              await localforage.removeItem(`${NOTE_CONTENT_PREFIX}${id}`);
+              await localforage.removeItem(`${NOTE_CONTENT_PREFIX}enc_${id}`);
+          }));
+          console.log("[StorageService] deleteNotes complete");
+      } catch (e) {
+          console.error("[StorageService] deleteNotes failed", e);
+          throw e;
+      }
+  }
+
   // --- Folder Operations ---
 
   static async getFolders(): Promise<Folder[]> {

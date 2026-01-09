@@ -35,7 +35,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
         ? 'border-yellow-200/50 shadow-[0_0_15px_rgba(255,255,255,0.15)] bg-white/15' 
         : theme === 'vision' 
             ? 'border-[#2F6BFF] shadow-[0_0_12px_rgba(47,107,255,0.25)]'
-            : `border-${styles.primaryText.split('-')[1]}-400/50 shadow-md ring-1 ring-${styles.primaryText.split('-')[1]}-500/20`) // Dynamic ring color
+            : `border-${styles.accentColor === '#2563eb' ? 'blue' : styles.accentColor.replace('#','')} shadow-md ring-1 ${styles.primaryRing} ring-opacity-20`) 
     : 'border-transparent dark:border-gray-800 shadow-sm';
 
   const isLocked = note.isLocked || note.isEncrypted;
@@ -80,7 +80,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
         rounded-[1.5rem] p-5 transition-all duration-200 cursor-pointer relative overflow-hidden group break-inside-avoid 
         ${pinnedStyle} 
         ${isLocked ? 'ring-1 ring-inset ring-black/5 dark:ring-white/5' : 'border'} 
-        ${isSelected ? 'ring-2 ring-blue-500 scale-[0.98]' : ''} 
+        ${isSelected ? `ring-2 ${styles.primaryRing} scale-[0.98]` : ''} 
         ${selectionMode && !isSelected ? 'opacity-60 scale-[0.95]' : ''} 
         ${className}
       `}
@@ -92,12 +92,12 @@ export const NoteCard: React.FC<NoteCardProps> = ({
         
         {/* If Selection Mode is active, show checkbox instead of Pin icon */}
         {selectionMode ? (
-             <div className={`flex-shrink-0 transition-colors ${isSelected ? 'text-blue-500' : styles.secondaryText}`}>
+             <div className={`flex-shrink-0 transition-colors ${isSelected ? styles.primaryText : styles.secondaryText}`}>
                  <Icon name={isSelected ? "checkCircle" : "circle"} size={22} fill={isSelected} />
              </div>
         ) : (
              !isTrashView && note.isPinned && (
-                <div className={`absolute top-0 right-0 p-2.5 rounded-bl-2xl shadow-sm ${theme === 'vision' ? 'bg-[#2F6BFF] text-white' : `${styles.primaryBg.replace('/10', '')} ${styles.primaryText.replace('400', '600').replace('text-', 'text-white ')} bg-blue-500 text-white`}`}>
+                <div className={`absolute top-0 right-0 p-2.5 rounded-bl-2xl shadow-sm ${styles.fab}`}>
                     <Icon name="pinFilled" size={14} fill={true} />
                 </div>
             )

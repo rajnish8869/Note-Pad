@@ -86,7 +86,7 @@ export const Drawer: React.FC<DrawerProps> = ({
         {/* --- Profile Header (Static Local) --- */}
         <div className={`p-6 pt-[calc(2rem+env(safe-area-inset-top))] pb-6 shrink-0`}>
              <div className={`flex items-center gap-4 p-4 rounded-3xl border shadow-sm ${styles.cardBase} ${styles.cardBorder}`}>
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center overflow-hidden shrink-0 ${theme === 'neo-glass' ? 'bg-white/20' : 'bg-gradient-to-br from-blue-400 to-blue-600 text-white'}`}>
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center overflow-hidden shrink-0 ${styles.profileIconBg}`}>
                     <span className="text-lg font-bold"><Icon name="user" size={24} /></span>
                 </div>
                 <div className="overflow-hidden">

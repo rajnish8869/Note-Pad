@@ -54,7 +54,7 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
 
   // Helper for Toggle Switch
   const Toggle = ({ checked }: { checked: boolean }) => (
-    <div className={`w-11 h-6 rounded-full relative transition-colors duration-200 ${checked ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
+    <div className={`w-11 h-6 rounded-full relative transition-colors duration-200 ${checked ? styles.fab : 'bg-gray-300 dark:bg-gray-600'}`}>
         <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-md transition-transform duration-200 ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
     </div>
   );
@@ -62,14 +62,14 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
   const ThemeCard = ({ id, label, icon, bgClass, active, onDelete }: any) => (
       <button 
         onClick={() => setTheme(id)}
-        className={`relative p-3 rounded-2xl flex flex-col items-center gap-2 transition-all border ${active ? 'border-blue-500 bg-blue-500/5 ring-1 ring-blue-500/20' : `border-transparent hover:bg-black/5 dark:hover:bg-white/5`}`}
+        className={`relative p-3 rounded-2xl flex flex-col items-center gap-2 transition-all border ${active ? `${styles.primaryRing} ${styles.primaryBg} ring-1 border-transparent` : `border-transparent hover:bg-black/5 dark:hover:bg-white/5`}`}
       >
         <div className={`w-12 h-12 rounded-full shadow-sm flex items-center justify-center ${bgClass} border border-black/10 dark:border-white/10`}>
             <Icon name={icon} size={20} className="text-white mix-blend-overlay opacity-90" />
         </div>
         <div className="flex items-center gap-1">
-             <span className={`text-xs font-medium truncate max-w-[80px] ${active ? 'text-blue-500' : styles.text}`}>{label}</span>
-             {active && <Icon name="check" size={12} className="text-blue-500" />}
+             <span className={`text-xs font-medium truncate max-w-[80px] ${active ? styles.primaryText : styles.text}`}>{label}</span>
+             {active && <Icon name="check" size={12} className={styles.primaryText} />}
         </div>
         {onDelete && (
             <div 
@@ -106,7 +106,7 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
                     <h2 className={`text-lg font-bold ${styles.text}`}>Local Account</h2>
                     <p className={`text-sm ${styles.secondaryText}`}>Notes are stored on your device</p>
                 </div>
-                <div className={`absolute top-0 left-0 w-full h-24 opacity-10 bg-gradient-to-b from-blue-500 to-transparent`} />
+                <div className={`absolute top-0 left-0 w-full h-24 opacity-10 bg-gradient-to-b from-${styles.accentColor} to-transparent`} />
             </div>
         </div>
 
@@ -157,12 +157,12 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
             <div className={`mx-4 rounded-3xl overflow-hidden border ${styles.cardBase} ${styles.cardBorder}`}>
                 <div className="grid grid-cols-2 divide-x dark:divide-gray-800 border-gray-100">
                     <button onClick={() => exportData()} className={`p-6 flex flex-col items-center gap-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors`}>
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400`}><Icon name="share" size={24} /></div>
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center ${styles.primaryBg} ${styles.primaryText}`}><Icon name="share" size={24} /></div>
                         <span className={`text-sm font-medium ${styles.text}`}>Export</span>
                     </button>
                     <button onClick={() => fileInputRef.current?.click()} className={`p-6 flex flex-col items-center gap-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors`}>
                          <input type="file" ref={fileInputRef} accept=".json" className="hidden" onChange={handleFileImport} />
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400`}><Icon name="save" size={24} /></div>
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center ${styles.successBg} ${styles.successText}`}><Icon name="save" size={24} /></div>
                         <span className={`text-sm font-medium ${styles.text}`}>Import</span>
                     </button>
                 </div>
@@ -227,7 +227,7 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
                           <button 
                             key={b}
                             onClick={() => setNewThemeBase(b as any)}
-                            className={`p-3 rounded-xl border font-medium capitalize transition-all ${newThemeBase === b ? `border-blue-500 bg-blue-500/10 text-blue-500` : `${styles.cardBase} border-transparent ${styles.text}`}`}
+                            className={`p-3 rounded-xl border font-medium capitalize transition-all ${newThemeBase === b ? `${styles.primaryRing} ${styles.primaryBg} ${styles.primaryText}` : `${styles.cardBase} border-transparent ${styles.text}`}`}
                           >
                               {b}
                           </button>

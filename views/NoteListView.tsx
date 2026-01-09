@@ -25,7 +25,7 @@ export const NoteListView: React.FC<Props> = ({
     view, currentFolderId, onNoteClick, onMenuClick, 
     searchQuery, setSearchQuery, selectionMode, setSelectionMode 
 }) => {
-  const { notes, folders, isIncognito, deleteNote, restoreNote, deleteForever, updateNote } = useNotes();
+  const { notes, folders, isIncognito, deleteNote, restoreNote, deleteForever, deleteNotesForever, updateNote } = useNotes();
   const { theme, styles } = useTheme();
   
   // UI States
@@ -38,6 +38,7 @@ export const NoteListView: React.FC<Props> = ({
   // Selection State
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showMoveMenu, setShowMoveMenu] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Greeting Logic
   const greeting = useMemo(() => {
@@ -70,6 +71,7 @@ export const NoteListView: React.FC<Props> = ({
       if (!selectionMode) {
           setSelectedIds(new Set());
           setShowMoveMenu(false);
+          setShowDeleteConfirm(false);
       }
   }, [selectionMode]);
 
@@ -201,16 +203,25 @@ export const NoteListView: React.FC<Props> = ({
   // Bulk Actions
   const handleBulkDelete = () => {
       const ids = Array.from(selectedIds);
+      if (ids.length === 0) return;
       triggerHaptic(20);
+
       if (view === 'TRASH') {
-          if(confirm(`Permanently delete ${ids.length} notes?`)) {
-              ids.forEach(id => deleteForever(id));
-              setSelectionMode(false);
-          }
+          // Open custom confirmation instead of window.confirm
+          setShowDeleteConfirm(true);
       } else {
           ids.forEach(id => deleteNote(id));
           setSelectionMode(false);
       }
+  };
+
+  const executePermanentDelete = () => {
+      const ids = Array.from(selectedIds);
+      console.log('Executing permanent delete for', ids);
+      deleteNotesForever(ids);
+      setShowDeleteConfirm(false);
+      setSelectionMode(false);
+      triggerHaptic(20);
   };
 
   const handleBulkRestore = () => {
@@ -249,7 +260,7 @@ export const NoteListView: React.FC<Props> = ({
         className={`
             flex items-center gap-2 px-4 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all duration-200 border
             ${activeFilter === type 
-                ? (theme === 'vision' ? 'bg-[#2F6BFF] border-[#2F6BFF] text-white shadow-lg shadow-blue-500/20' : 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-transparent')
+                ? (theme === 'vision' ? 'bg-[#2F6BFF] border-[#2F6BFF] text-white shadow-lg shadow-blue-500/20' : `${styles.fab} border-transparent`)
                 : `${styles.buttonSecondary} border-transparent hover:bg-gray-200 dark:hover:bg-gray-700`
             }
         `}
@@ -278,14 +289,14 @@ export const NoteListView: React.FC<Props> = ({
                          CloudPad
                      </h1>
                  </div>
-                 <button onClick={onMenuClick} className={`relative w-12 h-12 rounded-full flex items-center justify-center overflow-hidden border-2 transition-all active:scale-95 shadow-sm ${theme === 'neo-glass' ? 'border-white/20 bg-white/10' : 'border-white dark:border-gray-700 bg-gray-100 dark:bg-gray-800'}`}>
+                 <button onClick={onMenuClick} className={`relative w-12 h-12 rounded-full flex items-center justify-center overflow-hidden border-2 transition-all active:scale-95 shadow-sm ${theme === 'neo-glass' ? 'border-white/20 bg-white/10' : `border-white dark:border-gray-700 bg-gray-100 dark:bg-gray-800`}`}>
                     <Icon name="user" size={24} className={styles.secondaryText} />
                  </button>
              </div>
 
              {/* Search Bar */}
              <div className="flex gap-3">
-                 <div className={`flex-1 h-14 rounded-2xl flex items-center px-4 transition-all shadow-sm ${theme === 'neo-glass' ? 'bg-black/20 border border-white/10' : 'bg-white dark:bg-[#1e1e1e] border border-gray-100 dark:border-gray-800'}`}>
+                 <div className={`flex-1 h-14 rounded-2xl flex items-center px-4 transition-all shadow-sm ${theme === 'neo-glass' ? 'bg-black/20 border border-white/10' : `${styles.cardBase} ${styles.cardBorder} border`}`}>
                     <Icon name="search" size={20} className={styles.secondaryText} />
                     <input 
                       type="text" 
@@ -302,7 +313,7 @@ export const NoteListView: React.FC<Props> = ({
                  </div>
                  <button 
                     onClick={() => { setIsSortMenuOpen(true); triggerHaptic(10); }}
-                    className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm transition-all active:scale-95 ${theme === 'neo-glass' ? 'bg-white/10 border border-white/10' : 'bg-white dark:bg-[#1e1e1e] border border-gray-100 dark:border-gray-800'}`}
+                    className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm transition-all active:scale-95 ${theme === 'neo-glass' ? 'bg-white/10 border border-white/10' : `${styles.cardBase} ${styles.cardBorder} border`}`}
                  >
                      <Icon name="sort" size={22} className={styles.text} />
                  </button>
@@ -492,6 +503,32 @@ export const NoteListView: React.FC<Props> = ({
                 ))}
             </div>
         </BottomSheet>
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirm && (
+            <div className={`fixed inset-0 z-[60] flex items-center justify-center ${styles.modalOverlay} p-4 animate-slide-in`} onClick={() => setShowDeleteConfirm(false)}>
+                <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl ${styles.cardBase} ${styles.cardBorder} border transform scale-100 transition-all`} onClick={e => e.stopPropagation()}>
+                    <h3 className={`text-xl font-bold mb-2 ${styles.text}`}>Delete Forever?</h3>
+                    <p className={`text-sm opacity-70 mb-6 ${styles.secondaryText}`}>
+                        Are you sure you want to permanently delete {selectedIds.size} notes? This action cannot be undone.
+                    </p>
+                    <div className="flex gap-3">
+                        <button 
+                            onClick={() => setShowDeleteConfirm(false)}
+                            className={`flex-1 py-3 rounded-xl font-medium ${styles.buttonSecondary}`}
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            onClick={executePermanentDelete}
+                            className={`flex-1 py-3 rounded-xl font-medium bg-red-500 hover:bg-red-600 text-white shadow-lg active:scale-95 transition-all`}
+                        >
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
     </div>
   );
 };

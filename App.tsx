@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { ViewState, Note, NoteSecurity } from './types';
@@ -210,7 +211,18 @@ const MainApp = () => {
 
   const handleLockToggleRequest = () => {
       if (!activeNote) return;
-      if (!activeNote.isLocked) {
+      if (activeNote.isLocked) {
+          // Unlock the note
+          const unlockedNote: Note = { 
+              ...activeNote, 
+              isLocked: false, 
+              lockMode: undefined, 
+              security: undefined 
+          };
+          // Only update local state. EditorView will handle saving the plain text version
+          // on the next save (auto-save or back), which ensures content is decrypted/converted correctly.
+          setActiveNote(unlockedNote);
+      } else {
           setShowLockSelection(true);
       }
   };
