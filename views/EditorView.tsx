@@ -9,6 +9,7 @@ import TaskItem from '@tiptap/extension-task-item';
 import Highlight from '@tiptap/extension-highlight';
 import { Node, mergeAttributes } from '@tiptap/core';
 import { App as CapacitorApp } from '@capacitor/app';
+import { Share } from '@capacitor/share';
 
 import { Icon } from '../components/Icon';
 import { BottomSheet } from '../components/BottomSheet';
@@ -466,11 +467,15 @@ export const EditorView: React.FC<EditorViewProps> = ({
   };
 
   const handleShare = async () => {
-      if (navigator.share) {
-          const plainText = editor?.getText() || note.plainTextPreview;
-          await navigator.share({ title: title || 'CloudPad Note', text: `${title}\n\n${plainText}` });
-      } else { 
-          setAlertConfig({ isOpen: true, title: "Not Supported", message: "Web Share API not supported on this device." });
+      const plainText = editor?.getText() || note.plainTextPreview;
+      try {
+          await Share.share({
+              title: title || 'CloudPad Note',
+              text: `${title}\n\n${plainText}`,
+              dialogTitle: 'Share Note'
+          });
+      } catch (err) {
+          console.error("Share failed", err);
       }
   };
 
