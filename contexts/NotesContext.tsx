@@ -24,6 +24,7 @@ interface NotesContextType {
   toggleIncognito: (val: boolean) => void;
   exportData: () => Promise<void>;
   importData: (json: string) => Promise<void>;
+  resetApplication: () => Promise<void>;
 }
 
 const NotesContext = createContext<NotesContextType | undefined>(undefined);
@@ -180,6 +181,11 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await reloadData();
   };
 
+  const resetApplication = async () => {
+      await StorageService.clearAllData();
+      window.location.reload();
+  };
+
   return (
     <NotesContext.Provider value={{
         notes: activeNotes,
@@ -197,7 +203,8 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         createFolder,
         toggleIncognito: setIsIncognito,
         exportData,
-        importData
+        importData,
+        resetApplication
     }}>
       {children}
     </NotesContext.Provider>

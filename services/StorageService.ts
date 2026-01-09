@@ -128,6 +128,11 @@ export class StorageService {
       }
   }
 
+  static async clearAllData(): Promise<void> {
+      await localforage.clear();
+      localStorage.clear();
+  }
+
   // --- Combined Save Operation ---
 
   static async saveNote(note: Note): Promise<NoteMetadata> {

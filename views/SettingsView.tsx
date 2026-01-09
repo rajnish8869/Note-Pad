@@ -14,7 +14,7 @@ interface Props {
 
 export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
   const { theme, setTheme, styles, customThemes, addCustomTheme, deleteCustomTheme } = useTheme();
-  const { isIncognito, toggleIncognito, exportData, importData } = useNotes();
+  const { isIncognito, toggleIncognito, exportData, importData, resetApplication } = useNotes();
   const { isAppLockEnabled, toggleAppLock, hasSecuritySetup } = useSecurity();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -24,8 +24,9 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
   const [newThemeBase, setNewThemeBase] = useState<'light'|'dim'|'dark'>('dark');
   const [newThemeAccent, setNewThemeAccent] = useState('blue');
   
-  // Alert State
+  // Alert & Confirmation State
   const [alertConfig, setAlertConfig] = useState({ isOpen: false, title: '', message: '' });
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -56,6 +57,11 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
       setNewThemeName('');
   };
 
+  const handleReset = async () => {
+      setShowResetConfirm(false);
+      await resetApplication();
+  };
+
   // Helper for Toggle Switch
   const Toggle = ({ checked }: { checked: boolean }) => (
     <div className={`w-11 h-6 rounded-full relative transition-colors duration-200 ${checked ? styles.fab : 'bg-gray-300 dark:bg-gray-600'}`}>
@@ -63,17 +69,17 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
     </div>
   );
 
-  const ThemeCard = ({ id, label, icon, bgClass, active, onDelete }: any) => (
+  const ThemeCard = ({ id, label, icon, bgClass, active, onDelete, iconColor }: any) => (
       <button 
         onClick={() => setTheme(id)}
-        className={`relative p-3 rounded-2xl flex flex-col items-center gap-2 transition-all border ${active ? `${styles.primaryRing} ${styles.primaryBg} ring-1 border-transparent` : `border-transparent hover:bg-black/5 dark:hover:bg-white/5`}`}
+        className={`relative p-3 rounded-2xl flex flex-col items-center gap-2 transition-all border ${active ? `${styles.primaryRing} ${styles.primaryBg} ring-4 ring-opacity-100 border-transparent` : `border-transparent hover:bg-black/5 dark:hover:bg-white/5`}`}
       >
         <div className={`w-12 h-12 rounded-full shadow-sm flex items-center justify-center ${bgClass} border border-black/10 dark:border-white/10`}>
-            <Icon name={icon} size={20} className="text-white mix-blend-overlay opacity-90" />
+            <Icon name={icon} size={24} className={`${iconColor || 'text-gray-900'} opacity-90`} />
         </div>
         <div className="flex items-center gap-1">
              <span className={`text-xs font-medium truncate max-w-[80px] ${active ? styles.primaryText : styles.text}`}>{label}</span>
-             {active && <Icon name="check" size={12} className={styles.primaryText} />}
+             {active && <Icon name="check" size={14} className={styles.primaryText} />}
         </div>
         {onDelete && (
             <div 
@@ -125,16 +131,16 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                      {/* Preset Themes */}
                      {[
-                         { id: 'classic', label: 'Classic', icon: 'sun', bg: 'bg-gray-200' },
-                         { id: 'dark', label: 'Dark', icon: 'moon', bg: 'bg-gray-800' },
-                         { id: 'midnight', label: 'Midnight', icon: 'moon', bg: 'bg-black' },
-                         { id: 'neo-glass', label: 'Neo', icon: 'grid', bg: 'bg-gradient-to-br from-indigo-500 to-pink-500' },
-                         { id: 'vision', label: 'Vision', icon: 'eye', bg: 'bg-[#0B132B]' },
-                         { id: 'ocean', label: 'Ocean', icon: 'cloud', bg: 'bg-[#0f172a]' },
-                         { id: 'forest', label: 'Forest', icon: 'image', bg: 'bg-[#051a10]' },
-                         { id: 'sunset', label: 'Sunset', icon: 'sun', bg: 'bg-[#2a1b1b]' },
-                         { id: 'coffee', label: 'Coffee', icon: 'fileText', bg: 'bg-[#1c1917]' },
-                         { id: 'lavender', label: 'Lavender', icon: 'star', bg: 'bg-[#1e1b2e]' },
+                         { id: 'classic', label: 'Classic', icon: 'sun', bg: 'bg-white', iconColor: 'text-orange-500' },
+                         { id: 'dark', label: 'Dark', icon: 'moon', bg: 'bg-gray-800', iconColor: 'text-white' },
+                         { id: 'midnight', label: 'Midnight', icon: 'moon', bg: 'bg-black', iconColor: 'text-white' },
+                         { id: 'neo-glass', label: 'Neo', icon: 'grid', bg: 'bg-gradient-to-br from-indigo-500 to-pink-500', iconColor: 'text-white' },
+                         { id: 'vision', label: 'Vision', icon: 'eye', bg: 'bg-[#0B132B]', iconColor: 'text-white' },
+                         { id: 'ocean', label: 'Ocean', icon: 'cloud', bg: 'bg-[#0f172a]', iconColor: 'text-white' },
+                         { id: 'forest', label: 'Forest', icon: 'image', bg: 'bg-[#051a10]', iconColor: 'text-white' },
+                         { id: 'sunset', label: 'Sunset', icon: 'sun', bg: 'bg-[#2a1b1b]', iconColor: 'text-white' },
+                         { id: 'coffee', label: 'Coffee', icon: 'fileText', bg: 'bg-[#1c1917]', iconColor: 'text-white' },
+                         { id: 'lavender', label: 'Lavender', icon: 'star', bg: 'bg-[#1e1b2e]', iconColor: 'text-white' },
                      ].map(t => (
                         <ThemeCard key={t.id} {...t} active={theme === t.id} />
                      ))}
@@ -196,6 +202,23 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
                         </div>
                     </div>
                     <Toggle checked={isIncognito} />
+                </div>
+            </div>
+        </div>
+
+        {/* Danger Zone */}
+        <div className="mt-6">
+            <h3 className={`px-6 mb-2 text-xs font-bold uppercase tracking-wider opacity-60 ${styles.text}`}>Danger Zone</h3>
+            <div className={`mx-4 rounded-3xl overflow-hidden border ${styles.cardBase} ${styles.cardBorder}`}>
+                <div onClick={() => setShowResetConfirm(true)} className="p-4 flex items-center justify-between cursor-pointer hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors">
+                    <div className="flex items-center gap-4">
+                        <div className={`p-2 rounded-xl bg-red-100 dark:bg-red-900/30`}><Icon name="trash" size={20} className="text-red-600 dark:text-red-400" /></div>
+                        <div>
+                            <div className={`font-semibold text-sm text-red-600 dark:text-red-400`}>Reset App</div>
+                            <div className={`text-xs opacity-70 ${styles.secondaryText}`}>Clear all data and settings</div>
+                        </div>
+                    </div>
+                    <Icon name="chevronDown" size={20} className={`transform -rotate-90 ${styles.secondaryText}`} />
                 </div>
             </div>
         </div>
@@ -271,12 +294,40 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
               </button>
           </div>
       </BottomSheet>
+      
+      {/* Alert Modal */}
       <AlertModal 
           isOpen={alertConfig.isOpen}
           onClose={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
           title={alertConfig.title}
           message={alertConfig.message}
       />
+
+      {/* Reset Confirmation Modal */}
+      {showResetConfirm && (
+        <div className={`fixed inset-0 z-[60] flex items-center justify-center ${styles.modalOverlay} p-4 animate-slide-in`} onClick={() => setShowResetConfirm(false)}>
+            <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl ${styles.cardBase} ${styles.cardBorder} border transform scale-100 transition-all`} onClick={e => e.stopPropagation()}>
+                <h3 className={`text-xl font-bold mb-2 ${styles.text}`}>Reset Application?</h3>
+                <p className={`text-sm opacity-70 mb-6 leading-relaxed ${styles.secondaryText}`}>
+                    This will delete ALL notes, folders, and settings. This action cannot be undone.
+                </p>
+                <div className="flex gap-3">
+                    <button 
+                        onClick={() => setShowResetConfirm(false)}
+                        className={`flex-1 py-3 rounded-xl font-medium ${styles.buttonSecondary}`}
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        onClick={handleReset}
+                        className={`flex-1 py-3 rounded-xl font-medium bg-red-500 hover:bg-red-600 text-white shadow-lg active:scale-95 transition-all`}
+                    >
+                        Reset App
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 };
