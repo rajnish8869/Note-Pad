@@ -25,7 +25,7 @@ export const NoteListView: React.FC<Props> = ({
     view, currentFolderId, onNoteClick, onMenuClick, 
     searchQuery, setSearchQuery, selectionMode, setSelectionMode 
 }) => {
-  const { notes, folders, isIncognito, user, syncSuccess, isOnline, deleteNote, restoreNote, deleteForever, updateNote } = useNotes();
+  const { notes, folders, isIncognito, deleteNote, restoreNote, deleteForever, updateNote } = useNotes();
   const { theme, styles } = useTheme();
   
   // UI States
@@ -275,14 +275,11 @@ export const NoteListView: React.FC<Props> = ({
                          {greeting},
                      </p>
                      <h1 className={`text-3xl font-bold leading-tight ${styles.text}`}>
-                         {user ? user.name.split(' ')[0] : 'Guest'}
+                         CloudPad
                      </h1>
                  </div>
                  <button onClick={onMenuClick} className={`relative w-12 h-12 rounded-full flex items-center justify-center overflow-hidden border-2 transition-all active:scale-95 shadow-sm ${theme === 'neo-glass' ? 'border-white/20 bg-white/10' : 'border-white dark:border-gray-700 bg-gray-100 dark:bg-gray-800'}`}>
-                    {user?.imageUrl ? <img src={user.imageUrl} className="w-full h-full object-cover" /> : <Icon name="user" size={24} className={styles.secondaryText} />}
-                     {!isOnline && (
-                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-red-500 border-2 border-white dark:border-gray-900 rounded-full"></div>
-                     )}
+                    <Icon name="user" size={24} className={styles.secondaryText} />
                  </button>
              </div>
 
@@ -323,13 +320,6 @@ export const NoteListView: React.FC<Props> = ({
              )}
         </header>
         
-        {/* --- Sync Indicator --- */}
-        {syncSuccess && (
-            <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-green-500 text-white px-4 py-1.5 rounded-full text-xs font-bold shadow-lg z-30 animate-slide-up flex items-center gap-2">
-                <Icon name="check" size={14} /> Synced
-            </div>
-        )}
-
         {/* --- Main Content --- */}
         <main className="flex-1 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] mt-2">
             {view === 'TRASH' && (

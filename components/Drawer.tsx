@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Icon } from './Icon';
 import { ViewState } from '../types';
@@ -18,7 +19,7 @@ export const Drawer: React.FC<DrawerProps> = ({
     isOpen, onClose, currentView, currentFolderId, onChangeView, onShowSecuritySetup
 }) => {
   const { theme, styles } = useTheme();
-  const { user, folders, createFolder, notes } = useNotes();
+  const { folders, createFolder, notes } = useNotes();
   const { hasSecuritySetup } = useSecurity();
 
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
@@ -82,22 +83,18 @@ export const Drawer: React.FC<DrawerProps> = ({
       
       <div className={`fixed top-0 left-0 h-[100dvh] w-[300px] z-50 shadow-2xl transform transition-transform duration-300 flex flex-col ${isOpen ? 'translate-x-0' : '-translate-x-full'} ${styles.drawer}`}>
         
-        {/* --- Profile Header --- */}
+        {/* --- Profile Header (Static Local) --- */}
         <div className={`p-6 pt-[calc(2rem+env(safe-area-inset-top))] pb-6 shrink-0`}>
              <div className={`flex items-center gap-4 p-4 rounded-3xl border shadow-sm ${styles.cardBase} ${styles.cardBorder}`}>
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center overflow-hidden shrink-0 ${theme === 'neo-glass' ? 'bg-white/20' : 'bg-gradient-to-br from-blue-400 to-blue-600 text-white'}`}>
-                    {user?.imageUrl ? (
-                        <img src={user.imageUrl} alt={user.name} className="w-full h-full object-cover" />
-                    ) : (
-                        <span className="text-lg font-bold">{user ? user.name.charAt(0).toUpperCase() : <Icon name="user" size={24} />}</span>
-                    )}
+                    <span className="text-lg font-bold"><Icon name="user" size={24} /></span>
                 </div>
                 <div className="overflow-hidden">
                     <h2 className={`font-bold text-base truncate ${styles.text}`}>
-                        {user ? user.name : "Guest User"}
+                        Local Account
                     </h2>
                     <p className={`text-xs truncate opacity-60 ${styles.text}`}>
-                        {user ? user.email : "Local Account"}
+                        On-device storage
                     </p>
                 </div>
              </div>
@@ -193,7 +190,7 @@ export const Drawer: React.FC<DrawerProps> = ({
             )}
             
             <div className={`mt-4 text-[10px] text-center opacity-30 ${styles.text}`}>
-                CloudPad v1.0.2
+                CloudPad v1.0.3
             </div>
         </div>
 

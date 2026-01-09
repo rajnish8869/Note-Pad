@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Note, NoteMetadata, Folder, UserProfile } from '../types';
-import { DriveService } from '../services/DriveService';
+import { BackupService } from '../services/DriveService'; // Importing from file but class is BackupService
 import { StorageService } from '../services/StorageService';
 
 interface NotesContextType {
@@ -9,8 +9,6 @@ interface NotesContextType {
   folders: Folder[];
   user: UserProfile | null;
   isIncognito: boolean;
-  isSyncing: boolean;
-  syncSuccess: boolean;
   isLoading: boolean;
   isOnline: boolean;
   
@@ -23,22 +21,19 @@ interface NotesContextType {
   createFolder: (name: string) => void;
   
   toggleIncognito: (val: boolean) => void;
-  login: () => Promise<void>;
-  logout: () => Promise<void>;
-  sync: () => Promise<void>;
+  exportData: () => Promise<void>;
+  importData: (json: string) => Promise<void>;
 }
 
 const NotesContext = createContext<NotesContextType | undefined>(undefined);
-const driveService = new DriveService();
+const backupService = new BackupService();
 
 export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [notes, setNotes] = useState<NoteMetadata[]>([]);
   const [incognitoNotes, setIncognitoNotes] = useState<NoteMetadata[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [isIncognito, setIsIncognito] = useState(false);
-  const [user, setUser] = useState<UserProfile | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncSuccess, setSyncSuccess] = useState(false);
+  const [user, setUser] = useState<UserProfile | null>({ id: 'local', name: 'Local User', email: '' });
   const [isLoading, setIsLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
@@ -60,50 +55,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setIsLoading(true);
         try {
             await StorageService.init();
-            
-            const savedNotes = await StorageService.getNotesMetadata();
-            const savedFolders = await StorageService.getFolders();
-            
-            if (savedNotes && savedNotes.length > 0) {
-                // Auto-delete trash older than 30 days
-                const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-                const now = Date.now();
-                const cleanedNotes = savedNotes.filter(note => {
-                    if (note.isTrashed && note.deletedAt) {
-                        return (now - note.deletedAt) <= THIRTY_DAYS_MS;
-                    }
-                    return true; 
-                });
-                
-                // If we cleaned any notes, save the index back
-                if (cleanedNotes.length !== savedNotes.length) {
-                    await StorageService.saveNotesMetadata(cleanedNotes);
-                }
-                
-                setNotes(cleanedNotes);
-            } else {
-                // Welcome note
-                const welcomeNote: Note = {
-                    id: 'welcome-1',
-                    title: 'Welcome to CloudPad',
-                    content: 'This is a sample note showing off the features.',
-                    plainTextPreview: 'This is a sample note showing off the features.',
-                    createdAt: Date.now(),
-                    updatedAt: Date.now(),
-                    isPinned: true,
-                    color: 'default',
-                    tags: ['welcome']
-                };
-                await StorageService.saveNote(welcomeNote);
-                setNotes([welcomeNote]); // Metadata matches Note shape enough for initial
-            }
-            
-            if (savedFolders) setFolders(savedFolders);
-            
-            // Init Drive (async)
-            driveService.init("YOUR_API_KEY", "YOUR_CLIENT_ID")
-                .catch(e => console.warn("Drive Init Error:", e));
-                
+            await reloadData();
         } catch (e) {
             console.error("Failed to initialize storage", e);
         } finally {
@@ -113,6 +65,33 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     initData();
   }, []);
 
+  const reloadData = async () => {
+      const savedNotes = await StorageService.getNotesMetadata();
+      const savedFolders = await StorageService.getFolders();
+      
+      if (savedNotes && savedNotes.length > 0) {
+          // Auto-delete trash older than 30 days
+          const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+          const now = Date.now();
+          const cleanedNotes = savedNotes.filter(note => {
+              if (note.isTrashed && note.deletedAt) {
+                  return (now - note.deletedAt) <= THIRTY_DAYS_MS;
+              }
+              return true; 
+          });
+          
+          if (cleanedNotes.length !== savedNotes.length) {
+              await StorageService.saveNotesMetadata(cleanedNotes);
+          }
+          setNotes(cleanedNotes);
+      } else {
+          // Welcome note logic could go here
+          setNotes([]);
+      }
+      
+      if (savedFolders) setFolders(savedFolders);
+  };
+
   // Save Folders Only (Notes are saved individually via actions)
   useEffect(() => {
     if (!isLoading) {
@@ -120,19 +99,15 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [folders, isLoading]);
 
-  // Note Metadata Persistence is handled by actions calling StorageService, 
-  // but if we manipulate state directly (like in restoreNote), we need to save.
+  // Note Metadata Persistence
   useEffect(() => {
       if (!isLoading && !isIncognito) {
-          // We only save the metadata list here to sync UI state changes like Trash/Restore
-          // Content is separate.
           StorageService.saveNotesMetadata(notes);
       }
   }, [notes, isLoading, isIncognito]);
 
   const activeNotes = isIncognito ? incognitoNotes : notes;
-  const setActiveNotes = isIncognito ? setIncognitoNotes : setNotes;
-
+  
   const addNote = async (note: Note) => {
       if (!isIncognito) {
           const meta = await StorageService.saveNote(note);
@@ -169,7 +144,6 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const restoreNote = (id: string) => {
-      // Just state update, useEffect will save metadata
       setNotes(prev => prev.map(n => n.id === id ? { ...n, isTrashed: false, deletedAt: undefined } : n));
   };
 
@@ -177,36 +151,13 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setFolders(prev => [...prev, { id: Date.now().toString(), name, createdAt: Date.now() }]);
   };
 
-  const login = async () => {
-    try {
-        await driveService.signIn();
-        setUser({ id: 'google-user', name: 'Google User', email: 'Signed In' });
-        sync();
-    } catch (e) {
-        console.error("Login failed", e);
-        throw e;
-    }
+  const exportData = async () => {
+      await backupService.exportBackup();
   };
 
-  const logout = async () => {
-      await driveService.signOut();
-      setUser(null);
-  };
-
-  const sync = async () => {
-    if(isIncognito || !isOnline) return;
-    setIsSyncing(true);
-    try {
-        // Sync Logic has been moved to DriveService but it returns updated metadata list
-        const syncedNotes = await driveService.syncNotes(notes);
-        setNotes(syncedNotes);
-        setSyncSuccess(true);
-        setTimeout(() => setSyncSuccess(false), 3000);
-    } catch (error) {
-        console.error("Sync failed", error);
-    } finally {
-        setIsSyncing(false);
-    }
+  const importData = async (json: string) => {
+      await backupService.importBackup(json);
+      await reloadData();
   };
 
   return (
@@ -215,8 +166,6 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         folders,
         user,
         isIncognito,
-        isSyncing,
-        syncSuccess,
         isLoading,
         isOnline,
         addNote,
@@ -226,9 +175,8 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         restoreNote,
         createFolder,
         toggleIncognito: setIsIncognito,
-        login,
-        logout,
-        sync
+        exportData,
+        importData
     }}>
       {children}
     </NotesContext.Provider>

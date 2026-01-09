@@ -10,14 +10,6 @@ const config: CapacitorConfig = {
   android: {
     path: 'android'
   },
-  // Ensure we are targeting strict stable versions
-  plugins: {
-    GoogleAuth: {
-      scopes: ['profile', 'email'],
-      serverClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
-      forceCodeForRefreshToken: true,
-    },
-  },
 };
 
 export default config;

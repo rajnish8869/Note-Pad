@@ -2,7 +2,7 @@
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
 import localforage from 'localforage';
-import { Note, NoteMetadata, Folder } from '../types';
+import { Note, NoteMetadata, Folder, BackupData } from '../types';
 
 localforage.config({
   name: 'CloudPad',
@@ -81,6 +81,51 @@ export class StorageService {
           note.content = await this.getNoteContent(id);
       }
       return note;
+  }
+
+  // --- Bulk Operations (Backup) ---
+
+  static async getAllData(): Promise<BackupData> {
+      const folders = await this.getFolders();
+      const metadata = await this.getNotesMetadata();
+      const notes: Note[] = [];
+
+      // Sequentially load to avoid memory spikes, though parallel is faster
+      for (const meta of metadata) {
+          if (!meta.isTrashed) { // Don't backup trash? Or maybe optional. Backing up valid notes.
+              const note = await this.getFullNote(meta.id);
+              if (note) notes.push(note);
+          }
+      }
+
+      return {
+          version: 1,
+          createdAt: Date.now(),
+          folders,
+          notes
+      };
+  }
+
+  static async restoreData(data: BackupData): Promise<void> {
+      if (!data.notes || !Array.isArray(data.notes)) throw new Error("Invalid backup data");
+
+      // Merge Folders
+      const currentFolders = await this.getFolders();
+      const newFolders = [...currentFolders];
+      
+      if (data.folders) {
+          for (const f of data.folders) {
+              if (!newFolders.find(nf => nf.id === f.id)) {
+                  newFolders.push(f);
+              }
+          }
+          await this.saveFolders(newFolders);
+      }
+
+      // Merge Notes
+      for (const note of data.notes) {
+          await this.saveNote(note);
+      }
   }
 
   // --- Combined Save Operation ---

@@ -1,4 +1,5 @@
-import React from 'react';
+
+import React, { useRef } from 'react';
 import { Icon } from '../components/Icon';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNotes } from '../contexts/NotesContext';
@@ -11,9 +12,29 @@ interface Props {
 
 export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
   const { theme, setTheme, styles } = useTheme();
-  const { user, login, logout, isSyncing, sync, syncSuccess, isIncognito, toggleIncognito } = useNotes();
+  const { isIncognito, toggleIncognito, exportData, importData } = useNotes();
   const { isAppLockEnabled, toggleAppLock, hasSecuritySetup } = useSecurity();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
+  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+          const content = e.target?.result as string;
+          try {
+              await importData(content);
+              alert("Backup imported successfully!");
+          } catch (err) {
+              alert("Failed to import backup. Please ensure it is a valid JSON file.");
+          }
+      };
+      reader.readAsText(file);
+      // Reset input
+      if(fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   // Helper for Toggle Switch
   const Toggle = ({ checked }: { checked: boolean }) => (
     <div className={`w-11 h-6 rounded-full relative transition-colors duration-200 ${checked ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
@@ -33,68 +54,60 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
 
       <div className="flex-1 overflow-y-auto pb-[calc(2rem+env(safe-area-inset-bottom))]">
         
-        {/* Profile Card */}
+        {/* Profile Card (Local) */}
         <div className="p-4">
             <div className={`rounded-3xl p-6 border shadow-sm relative overflow-hidden ${styles.cardBase} ${styles.cardBorder}`}>
                 <div className="relative z-10 flex flex-col items-center text-center">
                     <div className={`w-20 h-20 rounded-full mb-4 flex items-center justify-center overflow-hidden border-4 ${styles.cardBase} ${styles.cardBorder} shadow-lg`}>
-                        {user?.imageUrl ? (
-                            <img src={user.imageUrl} className="w-full h-full object-cover" alt="Profile" />
-                        ) : (
-                            <div className={`w-full h-full flex items-center justify-center ${styles.tagBg}`}>
-                                <Icon name="user" size={32} className={styles.secondaryText} />
-                            </div>
-                        )}
+                        <div className={`w-full h-full flex items-center justify-center ${styles.tagBg}`}>
+                            <Icon name="user" size={32} className={styles.secondaryText} />
+                        </div>
                     </div>
-                    <h2 className={`text-lg font-bold ${styles.text}`}>{user?.name || "Guest User"}</h2>
-                    <p className={`text-sm mb-6 ${styles.secondaryText}`}>{user?.email || "Sign in to sync your notes"}</p>
-                    
-                    {user ? (
-                         <button 
-                            onClick={logout}
-                            className={`px-6 py-2 rounded-full text-sm font-bold border transition-all ${styles.buttonSecondary} border-gray-200 dark:border-gray-700`}
-                         >
-                            Sign Out
-                         </button>
-                    ) : (
-                        <button 
-                            onClick={login}
-                            className={`px-8 py-3 rounded-full text-sm font-bold text-white shadow-lg bg-blue-600 hover:bg-blue-700`}
-                        >
-                            Sign In with Google
-                        </button>
-                    )}
+                    <h2 className={`text-lg font-bold ${styles.text}`}>Local Account</h2>
+                    <p className={`text-sm ${styles.secondaryText}`}>Notes are stored on your device</p>
                 </div>
-                
                 {/* Decorative Background Elements */}
                 <div className={`absolute top-0 left-0 w-full h-24 opacity-10 ${theme === 'neo-glass' ? 'bg-white' : 'bg-blue-500'}`} />
             </div>
         </div>
 
-        {/* Sync Status (if logged in) */}
-        {user && (
-            <div className="px-4 mb-2">
-                 <div 
-                    onClick={() => !isSyncing && sync()}
-                    className={`rounded-2xl p-4 flex items-center justify-between border cursor-pointer active:scale-[0.99] transition-all ${styles.cardBase} ${styles.cardBorder}`}
-                 >
-                    <div className="flex items-center gap-4">
-                        <div className={`p-2.5 rounded-full ${syncSuccess ? 'bg-green-100 text-green-600' : (isSyncing ? 'bg-blue-100 text-blue-600' : `${styles.tagBg} ${styles.secondaryText}`)}`}>
-                            <Icon name={syncSuccess ? "check" : "refresh"} size={20} className={isSyncing ? "animate-spin" : ""} />
+        {/* Data Management (Import/Export) */}
+        <div className="mt-2">
+            <h3 className={`px-6 mb-2 text-xs font-bold uppercase tracking-wider opacity-60 ${styles.text}`}>Backup & Restore</h3>
+            <div className={`mx-4 rounded-3xl overflow-hidden border ${styles.cardBase} ${styles.cardBorder}`}>
+                <div className="grid grid-cols-2 divide-x dark:divide-gray-800 border-gray-100">
+                    <button 
+                        onClick={() => exportData()}
+                        className={`p-6 flex flex-col items-center gap-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors`}
+                    >
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400`}>
+                            <Icon name="share" size={24} />
                         </div>
-                        <div>
-                            <div className={`font-semibold text-sm ${styles.text}`}>Cloud Sync</div>
-                            <div className={`text-xs ${styles.secondaryText}`}>
-                                {isSyncing ? "Syncing changes..." : (syncSuccess ? "Synced just now" : "Tap to sync")}
-                            </div>
+                        <span className={`text-sm font-medium ${styles.text}`}>Export Data</span>
+                    </button>
+                    
+                    <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className={`p-6 flex flex-col items-center gap-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors`}
+                    >
+                         <input 
+                            type="file" 
+                            ref={fileInputRef} 
+                            accept=".json" 
+                            className="hidden" 
+                            onChange={handleFileImport}
+                        />
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400`}>
+                            <Icon name="save" size={24} />
                         </div>
-                    </div>
-                 </div>
+                        <span className={`text-sm font-medium ${styles.text}`}>Import Data</span>
+                    </button>
+                </div>
             </div>
-        )}
+        </div>
 
         {/* Appearance */}
-        <div className="mt-2">
+        <div className="mt-6">
             <h3 className={`px-6 mb-2 text-xs font-bold uppercase tracking-wider opacity-60 ${styles.text}`}>Appearance</h3>
             <div className={`mx-4 rounded-3xl overflow-hidden border ${styles.cardBase} ${styles.cardBorder}`}>
                 <div className="grid grid-cols-2 sm:grid-cols-2 divide-x divide-y dark:divide-gray-800 border-gray-100">
@@ -186,7 +199,7 @@ export const SettingsView: React.FC<Props> = ({ onBack, onSetupSecurity }) => {
                 <Icon name="cloud" size={24} />
             </div>
             <h4 className={`font-bold ${styles.text}`}>CloudPad</h4>
-            <p className={`text-xs opacity-50 ${styles.secondaryText}`}>Version 1.0.2 • Secure Note Taking</p>
+            <p className={`text-xs opacity-50 ${styles.secondaryText}`}>Version 1.0.3 • Local Storage Only</p>
         </div>
 
       </div>

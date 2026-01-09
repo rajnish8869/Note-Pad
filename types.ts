@@ -70,7 +70,9 @@ export type Theme = 'classic' | 'dark' | 'neo-glass' | 'vision';
 // Updated ViewState to support specific folder views or trash
 export type ViewState = 'LIST' | 'EDITOR' | 'SETTINGS' | 'TRASH' | 'FOLDER' | 'TAG';
 
-export interface DriveConfig {
-  clientId: string;
-  apiKey: string;
+export interface BackupData {
+    version: number;
+    createdAt: number;
+    folders: Folder[];
+    notes: Note[];
 }
