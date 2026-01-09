@@ -1,10 +1,11 @@
+
 import React, { useRef } from 'react';
-import { Note } from '../types';
+import { NoteMetadata } from '../types';
 import { Icon } from './Icon';
 import { useTheme, NOTE_COLORS } from '../contexts/ThemeContext';
 
 interface NoteCardProps { 
-    note: Note; 
+    note: NoteMetadata; 
     onClick: () => void; 
     onPin: (e: React.MouseEvent) => void;
     onRestore?: (e: React.MouseEvent) => void;
@@ -35,12 +36,11 @@ export const NoteCard: React.FC<NoteCardProps> = ({
             : 'border-blue-400/50 dark:border-blue-500/50 shadow-md ring-1 ring-blue-500/20')
     : 'border-transparent dark:border-gray-800 shadow-sm';
 
-  const isLocked = note.isLocked || !!note.encryptedData;
+  const isLocked = note.isLocked || note.isEncrypted;
   const isCustomLock = note.lockMode === 'CUSTOM';
-  const isEncrypted = !!note.encryptedData;
   
-  const hasImage = !isEncrypted && note.content.includes('<img');
-  const hasAudio = !isEncrypted && note.content.includes('<audio');
+  const hasImage = !isLocked && note.hasImage;
+  const hasAudio = !isLocked && note.hasAudio;
 
   const handleTouchStart = () => {
     isLongPress.current = false;
@@ -64,9 +64,6 @@ export const NoteCard: React.FC<NoteCardProps> = ({
       }
       onClick();
   }
-
-  // Modern Card Logic
-  const showBody = !isLocked && (note.plainTextPreview || note.title);
 
   return (
     <div 
@@ -128,7 +125,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
           </div>
       )}
 
-      {note.tags && note.tags.length > 0 && !isEncrypted && (
+      {note.tags && note.tags.length > 0 && !isLocked && (
           <div className="flex flex-wrap gap-1.5 mb-1 mt-auto pt-2">
               {note.tags.slice(0, 3).map(tag => (
                   <span key={tag} className={`text-[10px] font-bold tracking-wide px-2.5 py-1 rounded-md ${styles.tagBg} ${styles.tagText}`}>

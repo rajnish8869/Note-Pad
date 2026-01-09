@@ -1,5 +1,4 @@
 
-
 export interface EncryptedData {
   cipherText: string; // Base64
   iv: string; // Base64
@@ -18,10 +17,9 @@ export interface NoteLocation {
   address?: string; // Optional text representation
 }
 
-export interface Note {
+export interface NoteMetadata {
   id: string;
   title: string;
-  content: string; // HTML string
   plainTextPreview: string;
   createdAt: number;
   updatedAt: number;
@@ -42,7 +40,16 @@ export interface Note {
   lockMode?: 'GLOBAL' | 'CUSTOM'; // Default is GLOBAL if undefined
   security?: NoteSecurity; // Only present if lockMode is CUSTOM
   isIncognito?: boolean; // True if created in incognito mode
-  encryptedData?: string; // Stringified JSON of EncryptedData. If present, title/content are ignored/hidden.
+  
+  // Optimization Flags (Lazy Loading)
+  hasImage?: boolean;
+  hasAudio?: boolean;
+  isEncrypted?: boolean; 
+}
+
+export interface Note extends NoteMetadata {
+  content?: string; // HTML string - Optional because it might not be loaded yet
+  encryptedData?: string; // Stringified JSON of EncryptedData. Optional.
 }
 
 export interface Folder {

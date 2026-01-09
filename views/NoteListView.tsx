@@ -1,16 +1,17 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNotes } from '../contexts/NotesContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { NoteCard } from '../components/NoteCard';
 import { Icon } from '../components/Icon';
 import { BottomSheet } from '../components/BottomSheet';
-import { Note, ViewState } from '../types';
+import { Note, NoteMetadata, ViewState } from '../types';
 import { Virtuoso } from 'react-virtuoso';
 
 interface Props {
   view: ViewState;
   currentFolderId: string | null;
-  onNoteClick: (note: Note) => void;
+  onNoteClick: (note: NoteMetadata) => void;
   onMenuClick: () => void;
   searchQuery: string;
   setSearchQuery: (s: string) => void;
@@ -24,7 +25,7 @@ export const NoteListView: React.FC<Props> = ({
     view, currentFolderId, onNoteClick, onMenuClick, 
     searchQuery, setSearchQuery, selectionMode, setSelectionMode 
 }) => {
-  const { notes, folders, isIncognito, user, syncSuccess, isOnline, deleteNote, restoreNote, deleteForever, addNote, updateNote } = useNotes();
+  const { notes, folders, isIncognito, user, syncSuccess, isOnline, deleteNote, restoreNote, deleteForever, updateNote } = useNotes();
   const { theme, styles } = useTheme();
   
   // UI States
@@ -83,15 +84,15 @@ export const NoteListView: React.FC<Props> = ({
   const rawFilteredNotes = useMemo(() => {
     const lowerQuery = searchQuery.toLowerCase();
     let filtered = notes.filter(n => 
-      (n.title.toLowerCase().includes(lowerQuery) || n.plainTextPreview.toLowerCase().includes(lowerQuery) || (n.encryptedData && lowerQuery === ''))
+      (n.title.toLowerCase().includes(lowerQuery) || n.plainTextPreview.toLowerCase().includes(lowerQuery) || (n.isEncrypted && lowerQuery === ''))
     );
 
     // Filter by Filter Chips
     if (activeFilter !== 'ALL') {
         if (activeFilter === 'FAVORITES') filtered = filtered.filter(n => n.isPinned);
-        if (activeFilter === 'LOCKED') filtered = filtered.filter(n => n.isLocked || n.encryptedData);
-        if (activeFilter === 'MEDIA') filtered = filtered.filter(n => n.content.includes('<img'));
-        if (activeFilter === 'AUDIO') filtered = filtered.filter(n => n.content.includes('<audio'));
+        if (activeFilter === 'LOCKED') filtered = filtered.filter(n => n.isLocked || n.isEncrypted);
+        if (activeFilter === 'MEDIA') filtered = filtered.filter(n => n.hasImage);
+        if (activeFilter === 'AUDIO') filtered = filtered.filter(n => n.hasAudio);
     }
 
     if (view === 'TRASH') {
@@ -106,7 +107,7 @@ export const NoteListView: React.FC<Props> = ({
   }, [notes, searchQuery, view, currentFolderId, activeFilter]);
 
   // Sorting Function
-  const sortNotes = (n: Note[]) => {
+  const sortNotes = (n: NoteMetadata[]) => {
       return [...n].sort((a, b) => {
         switch(sortBy) {
             case 'TITLE': return a.title.localeCompare(b.title);
@@ -139,7 +140,7 @@ export const NoteListView: React.FC<Props> = ({
 
 
   // Helper to chunk data for grid
-  const chunkData = (data: Note[]) => {
+  const chunkData = (data: NoteMetadata[]) => {
       const chunks = [];
       for (let i = 0; i < data.length; i += numColumns) {
           chunks.push(data.slice(i, i + numColumns));
@@ -148,12 +149,6 @@ export const NoteListView: React.FC<Props> = ({
   };
 
   const rows = useMemo(() => {
-      // If we show pinned section, we render pinned notes first, then a divider (handled in itemContent), then others
-      // However, Virtuoso needs a single list. We can inject a "Header" item or handle it via visual mapping.
-      // Simpler approach: If showing pinned section, just render pinned grid at top manually (if small enough) 
-      // or flatten list.
-      // Given personal notes scale, rendering 2 grids is okay. But Virtuoso handles window scroll well.
-      
       if (showPinnedSection) {
           return { pinned: chunkData(pinnedNotes), others: chunkData(otherNotes) };
       }
@@ -176,7 +171,7 @@ export const NoteListView: React.FC<Props> = ({
       }
   };
 
-  const handleNoteInteraction = (note: Note) => {
+  const handleNoteInteraction = (note: NoteMetadata) => {
       if (selectionMode) {
           triggerHaptic(10);
           const newSet = new Set(selectedIds);
@@ -360,9 +355,6 @@ export const NoteListView: React.FC<Props> = ({
                 </div>
             ) : (
                 <>
-                {/* We use standard mapping for Pinned section to allow separation, then Virtuoso for the rest or standard for all if split. 
-                    Given the structure, if 'showPinnedSection' is true, we display the Pinned grid first.
-                */}
                 {showPinnedSection && (
                     <div className="mb-8 animate-slide-in">
                         <div className={`text-xs font-bold uppercase tracking-wider mb-3 px-1 opacity-50 ${styles.text}`}>Pinned</div>
@@ -424,7 +416,7 @@ export const NoteListView: React.FC<Props> = ({
             )}
         </main>
 
-        {/* --- Floating Selection Bar (Google Photos Style) --- */}
+        {/* --- Floating Selection Bar --- */}
         {selectionMode && (
             <div className="fixed bottom-6 left-4 right-4 z-40 animate-slide-up">
                  <div className={`rounded-full shadow-2xl p-2 px-6 flex items-center justify-between backdrop-blur-md ${theme === 'neo-glass' ? 'bg-black/60 border border-white/20' : 'bg-white/90 dark:bg-[#2c2c2c]/90 border border-gray-200 dark:border-gray-700'}`}>
@@ -468,7 +460,7 @@ export const NoteListView: React.FC<Props> = ({
             </div>
         )}
 
-        {/* --- Bottom Sheets (Modern Popups) --- */}
+        {/* --- Bottom Sheets --- */}
 
         {/* Sort Menu */}
         <BottomSheet isOpen={isSortMenuOpen} onClose={() => setIsSortMenuOpen(false)} title="Sort & Layout">

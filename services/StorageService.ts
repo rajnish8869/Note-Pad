@@ -1,25 +1,44 @@
+
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
 import localforage from 'localforage';
-import { Note, Folder } from '../types';
+import { Note, NoteMetadata, Folder } from '../types';
 
 localforage.config({
   name: 'CloudPad',
   storeName: 'notes_db'
 });
 
+const NOTES_INDEX_KEY = 'notes_index';
+const NOTE_CONTENT_PREFIX = 'note_content_';
+
 export class StorageService {
   static async init(): Promise<void> {
-    const oldNotes = localStorage.getItem('notes');
-    if (oldNotes) {
-      try {
-        const notes = JSON.parse(oldNotes);
-        await localforage.setItem('notes', notes);
-        localStorage.removeItem('notes');
-      } catch (e) {
-        console.error("Migration failed", e);
-      }
+    // 1. Migrate legacy "notes" array to split storage if exists
+    const legacyNotes = await localforage.getItem<Note[]>('notes');
+    if (legacyNotes && Array.isArray(legacyNotes)) {
+        console.log("Migrating legacy notes to split storage...");
+        const index: NoteMetadata[] = [];
+        for (const note of legacyNotes) {
+            // Save content separately
+            await this.saveNoteContentDirectly(note);
+            
+            // Create metadata
+            const { content, encryptedData, ...meta } = note;
+            const newMeta: NoteMetadata = {
+                ...meta,
+                hasImage: content ? content.includes('<img') : false,
+                hasAudio: content ? content.includes('<audio') : false,
+                isEncrypted: !!encryptedData
+            };
+            index.push(newMeta);
+        }
+        await localforage.setItem(NOTES_INDEX_KEY, index);
+        await localforage.removeItem('notes');
+        console.log("Migration complete.");
     }
+
+    // 2. Migrate localStorage folders if needed
     const oldFolders = localStorage.getItem('folders');
     if (oldFolders) {
        try {
@@ -30,13 +49,92 @@ export class StorageService {
     }
   }
 
-  static async getNotes(): Promise<Note[]> {
-    return (await localforage.getItem<Note[]>('notes')) || [];
+  // --- Metadata Operations ---
+
+  static async getNotesMetadata(): Promise<NoteMetadata[]> {
+    return (await localforage.getItem<NoteMetadata[]>(NOTES_INDEX_KEY)) || [];
   }
 
-  static async saveNotes(notes: Note[]): Promise<void> {
-    await localforage.setItem('notes', notes);
+  static async saveNotesMetadata(notes: NoteMetadata[]): Promise<void> {
+    await localforage.setItem(NOTES_INDEX_KEY, notes);
   }
+
+  // --- Content Operations ---
+
+  static async getNoteContent(id: string): Promise<string> {
+      return (await localforage.getItem<string>(`${NOTE_CONTENT_PREFIX}${id}`)) || "";
+  }
+
+  static async getEncryptedData(id: string): Promise<string | null> {
+      return await localforage.getItem<string>(`${NOTE_CONTENT_PREFIX}enc_${id}`);
+  }
+
+  static async getFullNote(id: string): Promise<Note | null> {
+      const index = await this.getNotesMetadata();
+      const meta = index.find(n => n.id === id);
+      if (!meta) return null;
+
+      const note: Note = { ...meta };
+      if (meta.isEncrypted) {
+          note.encryptedData = (await this.getEncryptedData(id)) || undefined;
+      } else {
+          note.content = await this.getNoteContent(id);
+      }
+      return note;
+  }
+
+  // --- Combined Save Operation ---
+
+  static async saveNote(note: Note): Promise<NoteMetadata> {
+      // 1. Prepare Metadata
+      const { content, encryptedData, ...rest } = note;
+      const metadata: NoteMetadata = {
+          ...rest,
+          hasImage: content ? content.includes('<img') : false,
+          hasAudio: content ? content.includes('<audio') : false,
+          isEncrypted: !!encryptedData
+      };
+
+      // 2. Save Content (Separately)
+      await this.saveNoteContentDirectly(note);
+
+      // 3. Update Index
+      const index = await this.getNotesMetadata();
+      const existingIdx = index.findIndex(n => n.id === note.id);
+      if (existingIdx >= 0) {
+          index[existingIdx] = metadata;
+      } else {
+          index.unshift(metadata);
+      }
+      await this.saveNotesMetadata(index);
+
+      return metadata;
+  }
+
+  private static async saveNoteContentDirectly(note: Note): Promise<void> {
+      if (note.encryptedData) {
+          await localforage.setItem(`${NOTE_CONTENT_PREFIX}enc_${note.id}`, note.encryptedData);
+          // Cleanup cleartext if exists
+          await localforage.removeItem(`${NOTE_CONTENT_PREFIX}${note.id}`);
+      } else {
+          await localforage.setItem(`${NOTE_CONTENT_PREFIX}${note.id}`, note.content || "");
+          // Cleanup encrypted if exists
+          await localforage.removeItem(`${NOTE_CONTENT_PREFIX}enc_${note.id}`);
+      }
+  }
+
+  static async deleteNote(id: string): Promise<void> {
+      // Remove from index
+      const index = await this.getNotesMetadata();
+      const newIndex = index.filter(n => n.id !== id);
+      await this.saveNotesMetadata(newIndex);
+
+      // Remove content
+      await localforage.removeItem(`${NOTE_CONTENT_PREFIX}${id}`);
+      await localforage.removeItem(`${NOTE_CONTENT_PREFIX}enc_${id}`);
+  }
+
+  // --- Folder Operations ---
 
   static async getFolders(): Promise<Folder[]> {
      return (await localforage.getItem<Folder[]>('folders')) || [];
@@ -46,35 +144,32 @@ export class StorageService {
      await localforage.setItem('folders', folders);
   }
 
+  // --- Media / Filesystem Operations ---
+
   static async saveMedia(base64Data: string): Promise<string> {
       try {
-          const parts = base64Data.split(',');
-          if (parts.length < 2) return ''; 
+          // Robustly handle data URIs
+          const matches = base64Data.match(/^data:(.+);base64,(.+)$/);
+          if (!matches || matches.length < 3) return ''; 
           
-          const header = parts[0];
-          const rawData = parts[1];
+          const mimeType = matches[1];
+          const rawData = matches[2];
           
           let ext = 'bin';
-          
-          if (header.includes('image/jpeg')) { ext = 'jpg'; }
-          else if (header.includes('image/png')) { ext = 'png'; }
-          else if (header.includes('image/gif')) { ext = 'gif'; }
-          else if (header.includes('audio/webm')) { ext = 'webm'; }
-          else if (header.includes('audio/mp3')) { ext = 'mp3'; }
-          else if (header.includes('audio/wav')) { ext = 'wav'; }
+          if (mimeType.includes('image/jpeg')) { ext = 'jpg'; }
+          else if (mimeType.includes('image/png')) { ext = 'png'; }
+          else if (mimeType.includes('image/gif')) { ext = 'gif'; }
+          else if (mimeType.includes('audio/webm')) { ext = 'webm'; }
+          else if (mimeType.includes('audio/mp3')) { ext = 'mp3'; }
+          else if (mimeType.includes('audio/wav')) { ext = 'wav'; }
 
           const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 5)}.${ext}`;
-
-          console.log(`[CloudPad Storage] Writing binary file: ${fileName} (Data Length: ${rawData.length})`);
 
           await Filesystem.writeFile({
               path: fileName,
               data: rawData,
               directory: Directory.Data
           });
-          
-          console.log(`[CloudPad Storage] File successfully written to disk: ${fileName}`);
-
           return fileName;
       } catch (e) {
           console.error("[CloudPad Storage] Error saving media to filesystem", e);
@@ -82,22 +177,9 @@ export class StorageService {
       }
   }
 
-  static async getFileSize(fileName: string): Promise<number> {
+  // Helper only for Web Platform
+  private static async loadMediaAsBase64(fileName: string): Promise<string> {
       try {
-          const stat = await Filesystem.stat({
-              path: fileName,
-              directory: Directory.Data
-          });
-          return stat.size;
-      } catch (e) {
-          console.error("[CloudPad Storage] Error getting file stats", e);
-          return 0;
-      }
-  }
-
-  static async loadMedia(fileName: string): Promise<string> {
-      try {
-          // console.log(`[CloudPad Storage] Reading file from disk (Base64 fallback): ${fileName}`);
           const file = await Filesystem.readFile({
               path: fileName,
               directory: Directory.Data
@@ -112,9 +194,7 @@ export class StorageService {
           if(ext === 'mp3') mime = 'audio/mp3';
           if(ext === 'wav') mime = 'audio/wav';
           
-          // Filesystem.readFile returns the raw data string (base64) in `data`
-          const dataUri = `data:${mime};base64,${file.data}`;
-          return dataUri;
+          return `data:${mime};base64,${file.data}`;
       } catch (e) {
           console.error(`[CloudPad Storage] Failed to load media ${fileName}`, e);
           return '';
@@ -125,10 +205,9 @@ export class StorageService {
     try {
       const platform = Capacitor.getPlatform();
       
-      // On Web, Filesystem operations are indexedDB based, convertFileSrc doesn't map to a real URL we can use in <img src>
-      // We must load the data as Base64.
+      // On Web, we must use base64 because we can't access native filesystem
       if (platform === 'web') {
-          return await this.loadMedia(fileName);
+          return await this.loadMediaAsBase64(fileName);
       }
 
       const uriResult = await Filesystem.getUri({
@@ -138,37 +217,25 @@ export class StorageService {
       
       let uri = uriResult.uri;
       
-      // Fix for Android: Ensure file:// prefix exists before conversion
+      // Ensure file protocol on Android
       if (platform === 'android' && !uri.startsWith('file://')) {
           uri = 'file://' + uri;
       }
 
-      // Convert file:// to https:// via Capacitor to ensure Webview access
+      // Convert native file path to WebView server URL (http://localhost/...)
+      // This allows the WebView to load the file without loading it into JS memory
       const converted = Capacitor.convertFileSrc(uri);
       
-      // Safety Check: If conversion failed to produce a web-accessible URL (http/https), 
-      // fallback to Base64 to ensure the image still loads.
-      if (platform === 'android' && !converted.startsWith('http')) {
-           console.warn(`[CloudPad Storage] convertFileSrc returned native path: ${converted}. Falling back to Base64.`);
-           return await this.loadMedia(fileName);
-      }
-
-      // console.log(`[CloudPad Storage] Generated Web Path for ${fileName}: ${converted}`);
       return converted;
     } catch (e) {
-      console.error("[CloudPad Storage] Failed to get media URI, falling back to Base64", fileName, e);
-      return await this.loadMedia(fileName);
+      console.error("[CloudPad Storage] Failed to get media URI", e);
+      return ''; 
     }
   }
 
   static async deleteMedia(fileName: string): Promise<void> {
       try {
-          await Filesystem.deleteFile({
-              path: fileName,
-              directory: Directory.Data
-          });
-      } catch (e) {
-          // Ignore if file doesn't exist
-      }
+          await Filesystem.deleteFile({ path: fileName, directory: Directory.Data });
+      } catch (e) {}
   }
 }

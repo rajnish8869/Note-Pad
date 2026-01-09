@@ -1,4 +1,6 @@
-import { Note } from '../types';
+
+import { Note, NoteMetadata } from '../types';
+import { StorageService } from './StorageService';
 
 const FOLDER_NAME = 'CloudPad_Notes_App_Data';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
@@ -25,13 +27,7 @@ export class DriveService {
 
       gapi.load('client', async () => {
         try {
-          // Initialize gapi.client with API key first
-          await gapi.client.init({
-            apiKey: apiKey,
-          });
-
-          // Load the Drive API using the name/version signature
-          // This is more robust than passing the discovery URL directly
+          await gapi.client.init({ apiKey: apiKey });
           await new Promise((resolveLoad) => {
              gapi.client.load('drive', 'v3', resolveLoad);
           });
@@ -50,7 +46,6 @@ export class DriveService {
             },
           });
           this.gisInited = true;
-          // Check for existing token
           const storedToken = localStorage.getItem('gdrive_token');
           if (storedToken) {
             this.accessToken = storedToken;
@@ -67,18 +62,13 @@ export class DriveService {
 
   async signIn(): Promise<void> {
     if (!this.tokenClient) return;
-    
     return new Promise((resolve, reject) => {
       this.tokenClient.callback = (resp: any) => {
-        if (resp.error) {
-           reject(resp);
-           return;
-        }
+        if (resp.error) { reject(resp); return; }
         this.accessToken = resp.access_token;
         localStorage.setItem('gdrive_token', resp.access_token);
         resolve();
       }
-      
       this.tokenClient.requestAccessToken({prompt: 'consent'});
     });
   }
@@ -94,9 +84,9 @@ export class DriveService {
     }
   }
 
-  // --- Real Sync Implementation ---
+  // --- Real Sync Implementation (Metadata Aware) ---
 
-  async syncNotes(localNotes: Note[]): Promise<Note[]> {
+  async syncNotes(localNotes: NoteMetadata[]): Promise<NoteMetadata[]> {
     if (!this.accessToken) {
         console.warn("No access token, skipping sync");
         return localNotes;
@@ -106,7 +96,7 @@ export class DriveService {
         const folderId = await this.getAppFolderId();
         const remoteFiles = await this.listRemoteFiles(folderId);
         
-        const mergedNotes: Note[] = [...localNotes];
+        let mergedNotes: NoteMetadata[] = [...localNotes];
         const processedIds = new Set<string>();
 
         // 1. Process Remote Files
@@ -123,24 +113,39 @@ export class DriveService {
             if (!localNote) {
                 // New remote note -> Download
                 if (!file.trashed) {
-                    const content = await this.downloadNote(file.id);
-                    if (content) mergedNotes.push({ ...content, isSynced: true });
+                    const fullNote = await this.downloadNote(file.id);
+                    if (fullNote) {
+                        const meta = await StorageService.saveNote({ ...fullNote, isSynced: true });
+                        mergedNotes.push(meta);
+                    }
                 }
             } else {
                 // Exists locally
                 if (localNote.updatedAt > remoteModifiedTime) {
                     // Local is newer -> Upload
-                    await this.updateRemoteNote(file.id, localNote);
-                    mergedNotes[localNoteIndex].isSynced = true;
+                    // We must fetch full content to upload
+                    const fullNote = await StorageService.getFullNote(localNote.id);
+                    if (fullNote) {
+                         await this.updateRemoteNote(file.id, fullNote);
+                         // Update metadata to show synced
+                         const newMeta = { ...localNote, isSynced: true };
+                         await StorageService.saveNote({ ...fullNote, isSynced: true });
+                         mergedNotes[localNoteIndex] = newMeta;
+                    }
                 } else if (remoteModifiedTime > localNote.updatedAt) {
                     // Remote is newer -> Download
-                    const content = await this.downloadNote(file.id);
-                    if (content) {
-                        mergedNotes[localNoteIndex] = { ...content, isSynced: true };
+                    const fullNote = await this.downloadNote(file.id);
+                    if (fullNote) {
+                        const meta = await StorageService.saveNote({ ...fullNote, isSynced: true });
+                        mergedNotes[localNoteIndex] = meta;
                     }
                 } else {
                     // In sync
-                    mergedNotes[localNoteIndex].isSynced = true;
+                    if (!localNote.isSynced) {
+                        mergedNotes[localNoteIndex] = { ...localNote, isSynced: true };
+                        // Persist metadata update
+                        // We don't have full note content here, so we just update metadata logic in context or bulk save later
+                    }
                 }
             }
         }
@@ -148,16 +153,23 @@ export class DriveService {
         // 2. Process Local-only Files (Upload new notes)
         for (const note of mergedNotes) {
             if (!processedIds.has(note.id) && !note.isSynced) {
-                await this.createRemoteNote(folderId, note);
-                note.isSynced = true;
+                const fullNote = await StorageService.getFullNote(note.id);
+                if (fullNote) {
+                    await this.createRemoteNote(folderId, fullNote);
+                    note.isSynced = true;
+                    // Update storage
+                    await StorageService.saveNote({ ...fullNote, isSynced: true });
+                }
             }
         }
+        
+        // Save the updated metadata list to storage
+        await StorageService.saveNotesMetadata(mergedNotes);
 
         return mergedNotes;
 
     } catch (e) {
         console.error("Sync Error:", e);
-        // On error (e.g., token expired), return local notes unmodified
         if ((e as any).status === 401) {
             this.accessToken = null;
             localStorage.removeItem('gdrive_token');
@@ -175,10 +187,7 @@ export class DriveService {
         return response.result.files[0].id;
     } else {
         const createResp = await gapi.client.drive.files.create({
-            resource: {
-                name: FOLDER_NAME,
-                mimeType: FOLDER_MIME
-            },
+            resource: { name: FOLDER_NAME, mimeType: FOLDER_MIME },
             fields: 'id'
         });
         return createResp.result.id;
@@ -190,7 +199,6 @@ export class DriveService {
     const q = `'${folderId}' in parents and mimeType = '${FILE_MIME}' and trashed = false`;
     let files: any[] = [];
     let pageToken = null;
-    
     do {
         const response: any = await gapi.client.drive.files.list({
             q,
@@ -200,7 +208,6 @@ export class DriveService {
         files = files.concat(response.result.files);
         pageToken = response.result.nextPageToken;
     } while (pageToken);
-    
     return files;
   }
 
@@ -221,20 +228,15 @@ export class DriveService {
         parents: [folderId],
         mimeType: FILE_MIME
     };
-    
     await gapi.client.drive.files.create({
         resource: fileMetadata,
-        media: {
-            mimeType: FILE_MIME,
-            body: fileContent
-        }
+        media: { mimeType: FILE_MIME, body: fileContent }
     });
   }
 
   private async updateRemoteNote(fileId: string, note: Note): Promise<void> {
     const gapi = (window as any).gapi;
     const fileContent = JSON.stringify(note);
-    
     await gapi.client.request({
         path: `/upload/drive/v3/files/${fileId}`,
         method: 'PATCH',

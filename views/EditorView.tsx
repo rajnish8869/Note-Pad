@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useEditor, EditorContent, ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -90,9 +91,12 @@ export const EditorView: React.FC<EditorViewProps> = ({
   // State
   const [isEditing, setIsEditing] = useState(initialEditMode);
   const [title, setTitle] = useState(note.title);
-  const [isDecrypted, setIsDecrypted] = useState(!note.encryptedData);
+  
+  // Decryption / Loading State
+  const [isDecrypted, setIsDecrypted] = useState(false);
   const [decryptionError, setDecryptionError] = useState(false);
   const [isLoadingContent, setIsLoadingContent] = useState(true);
+  
   const [tags, setTags] = useState<string[]>(note.tags || []);
   const [color, setColor] = useState(note.color || 'default');
   const [folderId, setFolderId] = useState(note.folderId || '');
@@ -128,7 +132,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const editor = useEditor({
     extensions: [
       StarterKit, TaskList, TaskItem.configure({ nested: true }),
-      CustomImage.configure({ inline: true, allowBase64: true }),
+      CustomImage.configure({ inline: true, allowBase64: true }), // Allow base64 temporarily for paste support, cleaned on save
       Placeholder.configure({ placeholder: 'Start typing...', emptyEditorClass: 'is-editor-empty' }),
       AudioExtension, Highlight.configure({ multicolor: true })
     ],
@@ -176,43 +180,72 @@ export const EditorView: React.FC<EditorViewProps> = ({
       return div.innerHTML;
   }, []);
 
-  const compressMedia = (html: string): string => {
+  const compressMedia = async (html: string): Promise<string> => {
       const div = document.createElement('div');
       div.innerHTML = html;
-      const processElements = (elements: NodeListOf<Element>) => {
-        elements.forEach(el => {
-            const filename = el.getAttribute('data-filename');
-            if (filename) el.setAttribute('src', `[[FILE:${filename}]]`);
-        });
+      
+      const images = Array.from(div.querySelectorAll('img'));
+      for (const img of images) {
+          const src = img.getAttribute('src');
+          const filename = img.getAttribute('data-filename');
+
+          if (filename) {
+               // Existing tracked file
+               img.setAttribute('src', `[[FILE:${filename}]]`);
+          } else if (src && src.startsWith('data:')) {
+               // Found Base64 image (pasted or dropped). Save it to disk now.
+               const newFilename = await StorageService.saveMedia(src);
+               if (newFilename) {
+                   img.setAttribute('src', `[[FILE:${newFilename}]]`);
+                   img.setAttribute('data-filename', newFilename);
+               }
+          }
       }
-      processElements(div.querySelectorAll('img'));
-      processElements(div.querySelectorAll('audio'));
+
+      const audios = Array.from(div.querySelectorAll('audio'));
+      for (const audio of audios) {
+         const filename = audio.getAttribute('data-filename');
+         if (filename) audio.setAttribute('src', `[[FILE:${filename}]]`);
+      }
       return div.innerHTML;
   };
 
   // --- Content Loading ---
   useEffect(() => {
     const initContent = async () => {
-      if (note.encryptedData && note.encryptedData === lastSavedEncryptedDataRef.current) return;
       setIsLoadingContent(true);
       let loadedContent = note.content;
       let loadedTitle = note.title;
+      let loadedEncryptedData = note.encryptedData;
 
-      if (note.encryptedData) {
-        if (!activeNoteKey) {
+      // Lazy Load content if missing
+      if (!loadedContent && !loadedEncryptedData && !note.isEncrypted) {
+         loadedContent = await StorageService.getNoteContent(note.id);
+      }
+      
+      // Lazy Load Encrypted Data if missing but flag is true
+      if (!loadedEncryptedData && note.isEncrypted) {
+          const fetchedEnc = await StorageService.getEncryptedData(note.id);
+          if (fetchedEnc) loadedEncryptedData = fetchedEnc;
+      }
+
+      if (loadedEncryptedData || note.isEncrypted) {
+        if (!activeNoteKey || !loadedEncryptedData) {
            setDecryptionError(true);
            setIsLoadingContent(false);
            return;
         }
         try {
-           const encryptedData: EncryptedData = JSON.parse(note.encryptedData);
+           const encryptedData: EncryptedData = JSON.parse(loadedEncryptedData);
            const jsonString = await SecurityService.decrypt(encryptedData, activeNoteKey);
            const payload = JSON.parse(jsonString);
            loadedTitle = payload.title;
            loadedContent = payload.content;
            setIsDecrypted(true);
            setDecryptionError(false);
+           lastSavedEncryptedDataRef.current = loadedEncryptedData;
         } catch (e) {
+           console.error("Decryption fail", e);
            setDecryptionError(true);
            setIsLoadingContent(false);
            return;
@@ -222,6 +255,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
         setDecryptionError(false);
       }
       
+      // Fallback for empty content
+      if (!loadedContent) loadedContent = "";
+      
       const expanded = await expandMedia(loadedContent);
       setTitle(loadedTitle);
       
@@ -230,16 +266,15 @@ export const EditorView: React.FC<EditorViewProps> = ({
           if (initialSearchQuery) {
               setEditorSearchTerm(initialSearchQuery);
               setShowSearch(true);
-              // Small delay to ensure render
               setTimeout(() => performSearch(initialSearchQuery), 100);
           }
       }
       setIsLoadingContent(false);
     };
     initContent();
-  }, [note.id, note.encryptedData, activeNoteKey, editor, expandMedia]);
+  }, [note.id, note.isEncrypted, activeNoteKey, editor, expandMedia]); // Removed specific content deps to prevent loops
 
-  // --- Saving & Search Logic from previous version preserved ---
+  // --- Saving & Search Logic ---
   const performSearch = useCallback((term: string) => {
       if (!editor) return;
       const { from, to } = editor.state.selection;
@@ -295,7 +330,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
     const currentHtml = editor.getHTML();
     const plainText = editor.getText();
-    const compressedContent = compressMedia(currentHtml);
+    // Compress media to ensure no Base64 strings are saved in the content
+    const compressedContent = await compressMedia(currentHtml);
 
     let updatedNote: Note = {
       ...note,
@@ -317,7 +353,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
             const encryptedString = JSON.stringify(encrypted);
             updatedNote.encryptedData = encryptedString;
             lastSavedEncryptedDataRef.current = encryptedString;
-            updatedNote.content = ""; 
+            // Clear plain content to not save it
+            updatedNote.content = undefined; 
             updatedNote.plainTextPreview = "";
         } catch (e) { console.error("Encryption failed", e); return; }
     } else if (!updatedNote.isLocked) {
@@ -339,7 +376,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   const handleBackAction = useCallback(() => {
       if (isDirty) {
-          // Auto save on back for smoother experience
           handleSave();
           triggerHaptic(20);
           onBack();
@@ -430,10 +466,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const wordCount = useMemo(() => {
       if (!editor) return 0;
       return editor.storage.characterCount?.words?.() ?? editor.getText().split(/\s+/).filter(w => w.length > 0).length;
-  }, [editor, isDirty]); // Depend on isDirty to update
+  }, [editor, isDirty]); 
 
   const noteColorClass = NOTE_COLORS[color][theme];
-  // If Neo-glass, we use a gradient background, else we use the specific note color
   const editorBgClass = theme === 'neo-glass' ? 'bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 bg-fixed' : noteColorClass.split(' ')[0]; 
 
   if (isLoadingContent || (!isDecrypted && !decryptionError)) {
@@ -468,7 +503,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
             </button>
             
             <div className="flex gap-1 items-center">
-                 {/* Auto-save Indicator */}
                  {!isDirty && !isEditing && (
                     <span className={`text-[10px] font-bold uppercase tracking-wider opacity-40 mr-2 ${styles.text}`}>Saved</span>
                  )}
@@ -509,7 +543,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
             </div>
         </div>
 
-        {/* --- Floating Search Bar (In Flow to avoid overlap) --- */}
+        {/* --- Floating Search Bar --- */}
         {showSearch && (
             <div className={`shrink-0 mx-4 mb-2 z-30 shadow-xl rounded-2xl border p-2 flex items-center gap-2 animate-slide-up ${styles.cardBase} ${styles.cardBorder}`}>
                 <Icon name="search" size={18} className={`ml-2 opacity-50 ${styles.text}`} />
@@ -556,10 +590,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
                         <Icon name="folder" size={12} />
                         {folderName}
                     </div>
-                    {/* <div className="flex items-center gap-1.5">
-                        <Icon name="fileText" size={12} />
-                        {wordCount} words
-                    </div> */}
                  </div>
                  
                  {/* Tags & Location Row */}
