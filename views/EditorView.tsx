@@ -194,9 +194,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
     ],
     editable: isEditing && !isLockedOut,
     onUpdate: ({ editor }) => {
-        if (editor.isFocused) {
-             setIsDirty(true);
-        }
+        // Fix: Force dirty state on any update, regardless of focus.
+        // This ensures programmatic updates or updates that occur after focus loss are captured.
+        // Initial load uses emitUpdate: false so it won't trigger this.
+        setIsDirty(true);
     },
     editorProps: {
       attributes: {
@@ -570,6 +571,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
           saveTimeoutRef.current = null;
       }
 
+      console.log('[EditorView] handleBackAction - isDirty:', isDirty);
+
       if (isDirty) {
           await handleSave(); 
           triggerHaptic(20);
@@ -618,6 +621,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       console.log('[EditorView] Image upload started');
+      setIsDirty(true); // Force dirty state to ensure save on exit even if editor not focused
       const file = e.target.files?.[0];
       if (file && editor) {
           const reader = new FileReader();
@@ -648,6 +652,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   const toggleRecording = async () => {
       triggerHaptic(20);
+      setIsDirty(true); // Force dirty state for new audio
       if (isRecording) {
           mediaRecorderRef.current?.stop();
           setIsRecording(false);
