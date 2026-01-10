@@ -37,9 +37,14 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     CapacitorApp.addListener('appStateChange', ({ isActive }) => {
-        if (!isActive && lockedPref) {
-            setIsAppLocked(true);
+        if (!isActive) {
+            // Security Best Practice: Always clear crypto keys from memory on background
             setSessionKey(null);
+            
+            // Only lock the full UI if preference is set
+            if (lockedPref) {
+                setIsAppLocked(true);
+            }
         }
     });
   }, []);

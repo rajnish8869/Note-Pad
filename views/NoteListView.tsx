@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNotes } from '../contexts/NotesContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -25,7 +24,7 @@ export const NoteListView: React.FC<Props> = ({
     view, currentFolderId, onNoteClick, onMenuClick, 
     searchQuery, setSearchQuery, selectionMode, setSelectionMode 
 }) => {
-  const { notes, folders, isIncognito, deleteNote, restoreNote, deleteForever, deleteNotesForever, updateNote } = useNotes();
+  const { notes, folders, isIncognito, deleteNote, restoreNote, deleteForever, deleteNotesForever, updateNote, searchNotes } = useNotes();
   const { theme, styles } = useTheme();
   
   // UI States
@@ -39,6 +38,9 @@ export const NoteListView: React.FC<Props> = ({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showMoveMenu, setShowMoveMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  
+  // Search State
+  const [contentSearchResults, setContentSearchResults] = useState<Set<string> | null>(null);
 
   // Greeting Logic
   const greeting = useMemo(() => {
@@ -75,6 +77,36 @@ export const NoteListView: React.FC<Props> = ({
       }
   }, [selectionMode]);
 
+  // Handle Deep Search via StorageService
+  useEffect(() => {
+      let isActive = true;
+      if (!searchQuery) {
+          setContentSearchResults(null);
+          return;
+      }
+
+      if (isIncognito) {
+          // In-memory search for incognito (Notes are available in memory)
+          const results = notes.filter(n => {
+              // Incognito notes in 'notes' array are actually full Note objects
+              const content = (n as any).content || ""; 
+              // Simple heuristic: search content string (contains HTML but better than nothing)
+              return content.toLowerCase().includes(searchQuery.toLowerCase());
+          }).map(n => n.id);
+          setContentSearchResults(new Set(results));
+      } else {
+          // Storage search (Deep Search)
+          const doSearch = async () => {
+              const ids = await searchNotes(searchQuery);
+              if (isActive) setContentSearchResults(new Set(ids));
+          };
+          // Debounce search
+          const timer = setTimeout(doSearch, 300);
+          return () => { isActive = false; clearTimeout(timer); };
+      }
+  }, [searchQuery, isIncognito, notes, searchNotes]);
+
+
   let viewTitle = isIncognito ? "Incognito" : "Notes";
   if (view === 'TRASH') viewTitle = "Trash";
   if (view === 'FOLDER') {
@@ -85,9 +117,24 @@ export const NoteListView: React.FC<Props> = ({
   // Raw Filtered Notes (Before Sorting/Splitting)
   const rawFilteredNotes = useMemo(() => {
     const lowerQuery = searchQuery.toLowerCase();
-    let filtered = notes.filter(n => 
-      (n.title.toLowerCase().includes(lowerQuery) || n.plainTextPreview.toLowerCase().includes(lowerQuery) || (n.isEncrypted && lowerQuery === ''))
-    );
+    
+    let filtered = notes.filter(n => {
+        // 1. Check Metadata (Title/Preview)
+        const matchesMeta = n.title.toLowerCase().includes(lowerQuery) || n.plainTextPreview.toLowerCase().includes(lowerQuery);
+        
+        // 2. Check Content (Async Results)
+        // If contentSearchResults is null (loading/empty), matchesContent is false
+        const matchesContent = contentSearchResults ? contentSearchResults.has(n.id) : false;
+        
+        // 3. Special Case: Encrypted notes
+        // If query is empty, show everything. If query exists, do not show encrypted notes unless title matches explicitly
+        if (n.isEncrypted && lowerQuery === '') return true; 
+
+        // 4. Combined Result
+        if (searchQuery && !matchesMeta && !matchesContent) return false;
+        
+        return true;
+    });
 
     // Filter by Filter Chips
     if (activeFilter !== 'ALL') {
@@ -106,7 +153,7 @@ export const NoteListView: React.FC<Props> = ({
         }
     }
     return filtered;
-  }, [notes, searchQuery, view, currentFolderId, activeFilter]);
+  }, [notes, searchQuery, view, currentFolderId, activeFilter, contentSearchResults]);
 
   // Sorting Function
   const sortNotes = (n: NoteMetadata[]) => {

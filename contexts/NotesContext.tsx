@@ -13,13 +13,14 @@ interface NotesContextType {
   isOnline: boolean;
   
   // Actions
-  addNote: (note: Note) => void;
-  updateNote: (note: Note) => void;
+  addNote: (note: Note, fullText?: string) => void;
+  updateNote: (note: Note, fullText?: string) => void;
   deleteNote: (id: string) => void;
   deleteForever: (id: string) => void;
   deleteNotesForever: (ids: string[]) => void;
   restoreNote: (id: string) => void;
   createFolder: (name: string) => void;
+  searchNotes: (query: string) => Promise<string[]>;
   
   toggleIncognito: (val: boolean) => void;
   exportData: () => Promise<void>;
@@ -110,18 +111,18 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const activeNotes = isIncognito ? incognitoNotes : notes;
   
-  const addNote = async (note: Note) => {
+  const addNote = async (note: Note, fullText?: string) => {
       if (!isIncognito) {
-          const meta = await StorageService.saveNote(note);
+          const meta = await StorageService.saveNote(note, fullText);
           setNotes(prev => [meta, ...prev]);
       } else {
           setIncognitoNotes(prev => [note, ...prev]);
       }
   };
 
-  const updateNote = async (updatedNote: Note) => {
+  const updateNote = async (updatedNote: Note, fullText?: string) => {
       if (!isIncognito) {
-          const meta = await StorageService.saveNote(updatedNote);
+          const meta = await StorageService.saveNote(updatedNote, fullText);
           setNotes(prev => prev.map(n => n.id === updatedNote.id ? meta : n));
       } else {
           setIncognitoNotes(prev => prev.map(n => n.id === updatedNote.id ? updatedNote : n));
@@ -172,6 +173,11 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setFolders(prev => [...prev, { id: Date.now().toString(), name, createdAt: Date.now() }]);
   };
 
+  const searchNotes = async (query: string): Promise<string[]> => {
+      if (isIncognito) return []; // Incognito search is handled in view memory
+      return await StorageService.search(query);
+  };
+
   const exportData = async () => {
       await backupService.exportBackup();
   };
@@ -201,6 +207,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deleteNotesForever,
         restoreNote,
         createFolder,
+        searchNotes,
         toggleIncognito: setIsIncognito,
         exportData,
         importData,

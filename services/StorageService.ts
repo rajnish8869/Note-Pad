@@ -3,6 +3,7 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
 import localforage from 'localforage';
 import { Note, NoteMetadata, Folder, BackupData } from '../types';
+import { MigrationPlugin } from '../plugins/MigrationPlugin';
 
 localforage.config({
   name: 'CloudPad',
@@ -10,32 +11,50 @@ localforage.config({
 });
 
 const NOTES_INDEX_KEY = 'notes_index';
+const SEARCH_INDEX_KEY = 'search_index_v1';
 const NOTE_CONTENT_PREFIX = 'note_content_';
+const MIGRATION_FLAG_KEY = 'migration_completed_v1';
+
+class Mutex {
+    private mutex = Promise.resolve();
+
+    lock(): Promise<() => void> {
+        let unlock: () => void = () => {};
+        const nextLock = new Promise<void>(resolve => {
+            unlock = resolve;
+        });
+        const lockPromise = this.mutex.then(() => unlock);
+        this.mutex = this.mutex.then(() => nextLock);
+        return lockPromise;
+    }
+
+    async dispatch<T>(fn: (() => T) | (() => Promise<T>)): Promise<T> {
+        const unlock = await this.lock();
+        try {
+            return await Promise.resolve(fn());
+        } finally {
+            unlock();
+        }
+    }
+}
 
 export class StorageService {
+  private static indexMutex = new Mutex();
+  private static searchCache: Record<string, string> | null = null;
+
   static async init(): Promise<void> {
-    // 1. Migrate legacy "notes" array to split storage if exists
-    const legacyNotes = await localforage.getItem<Note[]>('notes');
-    if (legacyNotes && Array.isArray(legacyNotes)) {
-        console.log("Migrating legacy notes to split storage...");
-        const index: NoteMetadata[] = [];
-        for (const note of legacyNotes) {
-            // Save content separately
-            await this.saveNoteContentDirectly(note);
-            
-            // Create metadata
-            const { content, encryptedData, ...meta } = note;
-            const newMeta: NoteMetadata = {
-                ...meta,
-                hasImage: content ? content.includes('<img') : false,
-                hasAudio: content ? content.includes('<audio') : false,
-                isEncrypted: !!encryptedData
-            };
-            index.push(newMeta);
+    // 1. Migrate legacy "notes" array to split storage
+    const isMigrated = localStorage.getItem(MIGRATION_FLAG_KEY);
+    
+    if (!isMigrated) {
+        if (Capacitor.getPlatform() === 'android') {
+            // Native Streaming Strategy (Android)
+            await this.migrateLegacyNative();
+        } else {
+            // Fallback Strategy (Web/iOS)
+            await this.migrateLegacyWeb();
         }
-        await localforage.setItem(NOTES_INDEX_KEY, index);
-        await localforage.removeItem('notes');
-        console.log("Migration complete.");
+        localStorage.setItem(MIGRATION_FLAG_KEY, 'true');
     }
 
     // 2. Migrate localStorage folders if needed
@@ -47,6 +66,183 @@ export class StorageService {
          localStorage.removeItem('folders');
        } catch(e) {}
     }
+  }
+
+  /**
+   * Android Native Streaming Strategy
+   * Bypasses WebView memory limits by streaming small batches from native disk.
+   */
+  private static async migrateLegacyNative(): Promise<void> {
+    return new Promise((resolve) => {
+        let isResolved = false;
+        
+        console.log("[StorageService] Starting Native Migration...");
+
+        // Helper to ensure clean exit
+        const finalize = async () => {
+            if (isResolved) return;
+            isResolved = true;
+            
+            try {
+                (await batchListener).remove();
+                (await completeListener).remove();
+                (await errorListener).remove();
+            } catch(e) {}
+            
+            resolve();
+        };
+
+        // 1. Timeout Safeguard
+        // If native plugin fails to fire events within 3s, assume empty/broken/web and skip.
+        const timer = setTimeout(() => {
+            console.warn("[StorageService] Native migration timed out. Skipping.");
+            finalize();
+        }, 3000);
+
+        // 2. Event Listeners
+        const batchListener = MigrationPlugin.addListener('onNotesBatch', async (data) => {
+            if (isResolved) return;
+            clearTimeout(timer); // Activity detected, keep alive
+
+            try {
+                // OPTIMIZATION: Read Index ONCE per batch, protected by mutex
+                await this.indexMutex.dispatch(async () => {
+                    const currentIndex = await this.getNotesMetadata();
+                    const newItems: NoteMetadata[] = [];
+    
+                    // Process batch
+                    for (const note of data.notes) {
+                        const meta = await this.processMigrationNoteContentOnly(note);
+                        newItems.push(meta);
+                    }
+    
+                    // Update Index ONCE per batch (O(1) IO instead of O(N))
+                    const mergedIndex = [...newItems, ...currentIndex]; 
+                    await this.saveNotesMetadata(mergedIndex);
+                });
+                
+                // CRITICAL: Acknowledge batch to release native hold and fetch next chunk
+                await MigrationPlugin.ackBatch();
+            } catch (e) {
+                console.error("[StorageService] Batch processing failed", e);
+                // Attempt to continue despite error
+                await MigrationPlugin.ackBatch();
+            }
+        });
+
+        const completeListener = MigrationPlugin.addListener('onMigrationComplete', async () => {
+            console.log("[StorageService] Native Migration Complete");
+            clearTimeout(timer);
+            finalize();
+        });
+
+        const errorListener = MigrationPlugin.addListener('onMigrationError', async (err) => {
+            console.error("[StorageService] Native Migration Error", err);
+            clearTimeout(timer);
+            finalize();
+        });
+
+        // 3. Start Plugin
+        MigrationPlugin.startLegacyMigration().catch((e) => {
+            console.warn("[StorageService] Native migration start failed (fallback)", e);
+            clearTimeout(timer);
+            finalize();
+        });
+    });
+  }
+
+  /**
+   * Web/Fallback Strategy
+   * Uses chunked processing of JS array to minimize main thread blocking.
+   */
+  private static async migrateLegacyWeb(): Promise<void> {
+    try {
+      const legacyNotes = await localforage.getItem<Note[]>('notes');
+      if (legacyNotes && Array.isArray(legacyNotes)) {
+          console.log("Migrating legacy notes (Web Fallback)...");
+          
+          await this.indexMutex.dispatch(async () => {
+              // Optimization: Load index once
+              const index = await this.getNotesMetadata();
+              const newMetas: NoteMetadata[] = [];
+    
+              for (let i = 0; i < legacyNotes.length; i++) {
+                  const note = legacyNotes[i];
+                  if (!note) continue;
+                  
+                  const meta = await this.processMigrationNoteContentOnly(note);
+                  newMetas.push(meta);
+                  
+                  legacyNotes[i] = null as any; // Release memory
+              }
+              
+              await this.saveNotesMetadata([...newMetas, ...index]);
+          });
+          await localforage.removeItem('notes');
+      }
+    } catch (e) {
+      console.error("Web Migration Failed", e);
+    }
+  }
+
+  /**
+   * Helper: Saves content to disk and returns Metadata object. 
+   * DOES NOT update the index (Caller must handle index update for performance).
+   */
+  private static async processMigrationNoteContentOnly(note: Note): Promise<NoteMetadata> {
+      // Save content separately
+      await this.saveNoteContentDirectly(note);
+      
+      // Create metadata
+      const { content, encryptedData, ...meta } = note;
+      const newMeta: NoteMetadata = {
+          ...meta,
+          hasImage: content ? content.includes('<img') : false,
+          hasAudio: content ? content.includes('<audio') : false,
+          isEncrypted: !!encryptedData
+      };
+      
+      return newMeta;
+  }
+
+  // --- Search Index Operations ---
+
+  private static async getSearchIndex(): Promise<Record<string, string>> {
+      if (this.searchCache) return this.searchCache;
+      this.searchCache = (await localforage.getItem(SEARCH_INDEX_KEY)) || {};
+      return this.searchCache!;
+  }
+
+  private static async updateSearchIndex(id: string, text: string, isEncrypted: boolean): Promise<void> {
+      if (isEncrypted) {
+          // Privacy: Do not index encrypted notes
+          await this.removeFromSearchIndex(id);
+          return;
+      }
+      const index = await this.getSearchIndex();
+      index[id] = text.toLowerCase();
+      await this.saveSearchIndex(index);
+  }
+
+  private static async removeFromSearchIndex(id: string): Promise<void> {
+      const index = await this.getSearchIndex();
+      if (index[id] !== undefined) {
+          delete index[id];
+          await this.saveSearchIndex(index);
+      }
+  }
+
+  private static async saveSearchIndex(index: Record<string, string>): Promise<void> {
+      this.searchCache = index;
+      await localforage.setItem(SEARCH_INDEX_KEY, index);
+  }
+
+  static async search(query: string): Promise<string[]> {
+      if (!query) return [];
+      const lowerQuery = query.toLowerCase();
+      const index = await this.getSearchIndex();
+      // Simple substring search
+      return Object.keys(index).filter(id => index[id] && index[id].includes(lowerQuery));
   }
 
   // --- Metadata Operations ---
@@ -88,14 +284,21 @@ export class StorageService {
   static async getAllData(): Promise<BackupData> {
       const folders = await this.getFolders();
       const metadata = await this.getNotesMetadata();
+      
+      const activeMetadata = metadata.filter(m => !m.isTrashed);
       const notes: Note[] = [];
-
-      // Sequentially load to avoid memory spikes, though parallel is faster
-      for (const meta of metadata) {
-          if (!meta.isTrashed) { // Don't backup trash? Or maybe optional. Backing up valid notes.
-              const note = await this.getFullNote(meta.id);
+      
+      const BATCH_SIZE = 50; 
+      
+      for (let i = 0; i < activeMetadata.length; i += BATCH_SIZE) {
+          const batch = activeMetadata.slice(i, i + BATCH_SIZE);
+          const batchResults = await Promise.all(
+              batch.map(meta => this.getFullNote(meta.id))
+          );
+          
+          batchResults.forEach(note => {
               if (note) notes.push(note);
-          }
+          });
       }
 
       return {
@@ -135,7 +338,7 @@ export class StorageService {
 
   // --- Combined Save Operation ---
 
-  static async saveNote(note: Note): Promise<NoteMetadata> {
+  static async saveNote(note: Note, searchableText?: string): Promise<NoteMetadata> {
       console.log(`[StorageService] saveNote ${note.id} | Content defined: ${note.content !== undefined} | EncryptedData defined: ${note.encryptedData !== undefined}`);
 
       // 1. Prepare Metadata
@@ -170,60 +373,64 @@ export class StorageService {
       // 2. Save Content (Separately)
       await this.saveNoteContentDirectly(note);
 
-      // 3. Update Index
-      const index = await this.getNotesMetadata();
-      const existingIdx = index.findIndex(n => n.id === note.id);
-      if (existingIdx >= 0) {
-          index[existingIdx] = metadata;
-      } else {
-          index.unshift(metadata);
+      // 3. Update Index (Protected by Mutex)
+      await this.indexMutex.dispatch(async () => {
+          const index = await this.getNotesMetadata();
+          const existingIdx = index.findIndex(n => n.id === note.id);
+          if (existingIdx >= 0) {
+              index[existingIdx] = metadata;
+          } else {
+              index.unshift(metadata);
+          }
+          await this.saveNotesMetadata(index);
+      });
+
+      // 4. Update Search Index
+      if (note.isEncrypted) {
+          await this.removeFromSearchIndex(note.id);
+      } else if (searchableText !== undefined) {
+          await this.updateSearchIndex(note.id, searchableText, false);
       }
-      await this.saveNotesMetadata(index);
 
       return metadata;
   }
 
   private static async saveNoteContentDirectly(note: Note): Promise<void> {
       // CRITICAL: Only write to storage if content/data is strictly defined.
-      // Passing 'undefined' means "don't change content", useful for metadata updates (move folder, pin, etc).
-      // Passing empty string "" means "clear content".
-      
       if (note.encryptedData !== undefined) {
           await localforage.setItem(`${NOTE_CONTENT_PREFIX}enc_${note.id}`, note.encryptedData);
-          // Cleanup cleartext if exists
           await localforage.removeItem(`${NOTE_CONTENT_PREFIX}${note.id}`);
       } else if (note.content !== undefined) {
           await localforage.setItem(`${NOTE_CONTENT_PREFIX}${note.id}`, note.content);
-          // Cleanup encrypted if exists
           await localforage.removeItem(`${NOTE_CONTENT_PREFIX}enc_${note.id}`);
-      } else {
-          console.log(`[StorageService] Skipping content write for ${note.id} (Metadata only update)`);
       }
   }
 
   static async deleteNote(id: string): Promise<void> {
-      // Remove from index
-      const index = await this.getNotesMetadata();
-      const newIndex = index.filter(n => n.id !== id);
-      await this.saveNotesMetadata(newIndex);
+      await this.indexMutex.dispatch(async () => {
+          const index = await this.getNotesMetadata();
+          const newIndex = index.filter(n => n.id !== id);
+          await this.saveNotesMetadata(newIndex);
+      });
 
-      // Remove content
       await localforage.removeItem(`${NOTE_CONTENT_PREFIX}${id}`);
       await localforage.removeItem(`${NOTE_CONTENT_PREFIX}enc_${id}`);
+      await this.removeFromSearchIndex(id);
   }
 
   static async deleteNotes(ids: string[]): Promise<void> {
       console.log("[StorageService] deleteNotes", ids);
       try {
-          // Remove from index
-          const index = await this.getNotesMetadata();
-          const newIndex = index.filter(n => !ids.includes(n.id));
-          await this.saveNotesMetadata(newIndex);
+          await this.indexMutex.dispatch(async () => {
+              const index = await this.getNotesMetadata();
+              const newIndex = index.filter(n => !ids.includes(n.id));
+              await this.saveNotesMetadata(newIndex);
+          });
 
-          // Remove content (Parallel for performance)
           await Promise.all(ids.map(async (id) => {
               await localforage.removeItem(`${NOTE_CONTENT_PREFIX}${id}`);
               await localforage.removeItem(`${NOTE_CONTENT_PREFIX}enc_${id}`);
+              await this.removeFromSearchIndex(id);
           }));
           console.log("[StorageService] deleteNotes complete");
       } catch (e) {
@@ -246,13 +453,18 @@ export class StorageService {
 
   static async saveMedia(base64Data: string): Promise<string> {
       try {
-          // Robustly handle data URIs
-          const matches = base64Data.match(/^data:(.+);base64,(.+)$/);
-          if (!matches || matches.length < 3) return ''; 
+          const cleanData = base64Data.trim().replace(/[\n\r]/g, '');
+          if (!cleanData.startsWith('data:')) return '';
           
-          const mimeType = matches[1];
-          const rawData = matches[2];
+          const commaIndex = cleanData.indexOf(',');
+          if (commaIndex === -1) return '';
           
+          const header = cleanData.substring(0, commaIndex);
+          const rawData = cleanData.substring(commaIndex + 1);
+
+          if (!header.includes(';base64')) return '';
+          
+          const mimeType = header.substring(5, header.indexOf(';'));
           let ext = 'bin';
           if (mimeType.includes('image/jpeg')) { ext = 'jpg'; }
           else if (mimeType.includes('image/png')) { ext = 'png'; }
@@ -275,7 +487,6 @@ export class StorageService {
       }
   }
 
-  // Helper only for Web Platform
   private static async loadMediaAsBase64(fileName: string): Promise<string> {
       try {
           const file = await Filesystem.readFile({
@@ -303,7 +514,6 @@ export class StorageService {
     try {
       const platform = Capacitor.getPlatform();
       
-      // On Web, we must use base64 because we can't access native filesystem
       if (platform === 'web') {
           return await this.loadMediaAsBase64(fileName);
       }
@@ -315,9 +525,13 @@ export class StorageService {
       
       let uri = uriResult.uri;
       
-      // Ensure file protocol on Android
-      if (platform === 'android' && !uri.startsWith('file://')) {
-          uri = 'file://' + uri;
+      // FIX: Robustly handle Android file URI path resolution for WebViews
+      // Check for common schemes to avoid double-prefixing or corrupting content URIs
+      if (platform === 'android' && !uri.startsWith('file://') && !uri.startsWith('content://')) {
+          // Ensure we have an absolute path structure
+          // If uri starts with '/', prepending 'file://' makes it 'file:///...' (Correct)
+          // If uri is relative (e.g. 'files/...'), prepending 'file:///' makes it 'file:///files/...' (Best guess/Correct)
+          uri = uri.startsWith('/') ? `file://${uri}` : `file:///${uri}`;
       }
 
       // Convert native file path to WebView server URL (http://localhost/...)

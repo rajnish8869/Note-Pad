@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { ViewState, Note, NoteSecurity } from './types';
@@ -49,6 +48,9 @@ const MainApp = () => {
     view, isDrawerOpen, showAuthModal, showSecuritySetup, 
     showLockSelection, isAppLocked, selectionMode, alertConfig
   });
+  
+  // Flag to debounce back button presses
+  const processingBack = useRef(false);
 
   useEffect(() => {
     stateRef.current = { 
@@ -59,6 +61,11 @@ const MainApp = () => {
 
   useEffect(() => {
     const backListener = CapacitorApp.addListener('backButton', ({ canGoBack }) => {
+        // Debounce: Prevent double handling if user mashes back button
+        if (processingBack.current) return;
+        processingBack.current = true;
+        setTimeout(() => { processingBack.current = false; }, 400);
+
         const state = stateRef.current;
         
         if (state.isAppLocked) {
@@ -270,88 +277,111 @@ const MainApp = () => {
       setShowSecuritySetup(true);
   };
 
-  if (isAppLocked) {
-      return <AuthModal onUnlock={handleAuthSuccess} theme={theme} />;
-  }
-  
-  if (showSecuritySetup) {
-      return <SecuritySetupModal onComplete={handleSecuritySetupComplete} onCancel={() => setShowSecuritySetup(false)} theme={theme} />;
-  }
-
-  if (showAuthModal) {
-      return <AuthModal 
-        onUnlock={handleAuthSuccess} 
-        onCancel={() => { setShowAuthModal(false); setPendingAuthNote(null); setIsLockingGlobal(false); }} 
-        customSecurity={pendingAuthNote?.lockMode === 'CUSTOM' ? pendingAuthNote.security : undefined}
-        theme={theme}
-      />;
-  }
-
-  if (view === 'EDITOR' && activeNote) {
-      return (
-        <>
-            <EditorView 
-                note={activeNote}
-                folders={[]} 
-                initialEditMode={!activeNote.title} 
-                activeNoteKey={activeNoteKey || sessionKey}
-                onSave={(n) => { updateNote(n); setActiveNote(n); }}
-                onBack={() => setView('LIST')}
-                onDelete={(id) => { deleteNote(id); setView('LIST'); }}
-                onLockToggle={handleLockToggleRequest}
-                initialSearchQuery={searchQuery}
-            />
-            {showLockSelection && (
-                <LockSelectionModal 
-                    onSelectGlobal={handleSelectGlobalLock}
-                    onSelectCustom={handleSelectCustomLock}
-                    onCancel={() => setShowLockSelection(false)}
-                    hasGlobalSecurity={hasSecuritySetup}
+  const renderContent = () => {
+      if (view === 'EDITOR' && activeNote) {
+          return (
+            <>
+                <EditorView 
+                    note={activeNote}
+                    folders={[]} 
+                    initialEditMode={!activeNote.title} 
+                    activeNoteKey={activeNoteKey || sessionKey}
+                    onSave={(n) => { updateNote(n); setActiveNote(n); }}
+                    onBack={() => setView('LIST')}
+                    onDelete={(id) => { deleteNote(id); setView('LIST'); }}
+                    onLockToggle={handleLockToggleRequest}
+                    initialSearchQuery={searchQuery}
+                    onRequestAuth={() => {
+                        setPendingAuthNote(activeNote);
+                        setShowAuthModal(true);
+                    }}
                 />
-            )}
-            <AlertModal 
-                isOpen={alertConfig.isOpen}
-                onClose={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
-                title={alertConfig.title}
-                message={alertConfig.message}
-            />
-        </>
-      );
-  }
+                {showLockSelection && (
+                    <LockSelectionModal 
+                        onSelectGlobal={handleSelectGlobalLock}
+                        onSelectCustom={handleSelectCustomLock}
+                        onCancel={() => setShowLockSelection(false)}
+                        hasGlobalSecurity={hasSecuritySetup}
+                    />
+                )}
+                <AlertModal 
+                    isOpen={alertConfig.isOpen}
+                    onClose={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
+                    title={alertConfig.title}
+                    message={alertConfig.message}
+                />
+            </>
+          );
+      }
 
-  if (view === 'SETTINGS') {
+      if (view === 'SETTINGS') {
+          return (
+              <SettingsView 
+                onBack={() => setView('LIST')} 
+                onSetupSecurity={() => { setSecuritySetupMode('GLOBAL'); setShowSecuritySetup(true); }}
+              />
+          );
+      }
+
       return (
-          <SettingsView 
-            onBack={() => setView('LIST')} 
-            onSetupSecurity={() => { setSecuritySetupMode('GLOBAL'); setShowSecuritySetup(true); }}
-          />
+        <div className={`min-h-[100dvh] flex justify-center ${styles.bg}`}>
+            <NoteListView 
+                view={view}
+                currentFolderId={currentFolderId}
+                onNoteClick={handleNoteClick}
+                onMenuClick={() => setIsDrawerOpen(true)}
+                searchQuery={searchQuery}
+                setSearchQuery={setSearchQuery}
+                selectionMode={selectionMode}
+                setSelectionMode={setSelectionMode}
+            />
+            
+            {view !== 'TRASH' && !selectionMode && <FAB onClick={handleCreateNote} />}
+
+            <Drawer 
+                isOpen={isDrawerOpen} 
+                onClose={() => setIsDrawerOpen(false)}
+                currentView={view}
+                currentFolderId={currentFolderId}
+                onChangeView={(v, id) => { setView(v); setCurrentFolderId(id || null); setIsDrawerOpen(false); }}
+                onShowSecuritySetup={() => { setIsDrawerOpen(false); setSecuritySetupMode('GLOBAL'); setShowSecuritySetup(true); }}
+            />
+        </div>
       );
-  }
+  };
 
   return (
-    <div className={`min-h-[100dvh] flex justify-center ${styles.bg}`}>
-        <NoteListView 
-            view={view}
-            currentFolderId={currentFolderId}
-            onNoteClick={handleNoteClick}
-            onMenuClick={() => setIsDrawerOpen(true)}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            selectionMode={selectionMode}
-            setSelectionMode={setSelectionMode}
-        />
+      <>
+        {/* Overlay Modals: Ensure these are rendered on top */}
+        {isAppLocked && (
+            <div className="fixed inset-0 z-[100]">
+                <AuthModal onUnlock={handleAuthSuccess} theme={theme} />
+            </div>
+        )}
         
-        {view !== 'TRASH' && !selectionMode && <FAB onClick={handleCreateNote} />}
+        {!isAppLocked && showSecuritySetup && (
+            <div className="fixed inset-0 z-[100]">
+                 <SecuritySetupModal onComplete={handleSecuritySetupComplete} onCancel={() => setShowSecuritySetup(false)} theme={theme} />
+            </div>
+        )}
 
-        <Drawer 
-            isOpen={isDrawerOpen} 
-            onClose={() => setIsDrawerOpen(false)}
-            currentView={view}
-            currentFolderId={currentFolderId}
-            onChangeView={(v, id) => { setView(v); setCurrentFolderId(id || null); setIsDrawerOpen(false); }}
-            onShowSecuritySetup={() => { setIsDrawerOpen(false); setSecuritySetupMode('GLOBAL'); setShowSecuritySetup(true); }}
-        />
-    </div>
+        {!isAppLocked && showAuthModal && (
+            <div className="fixed inset-0 z-[100]">
+                <AuthModal 
+                    onUnlock={handleAuthSuccess} 
+                    onCancel={() => { setShowAuthModal(false); setPendingAuthNote(null); setIsLockingGlobal(false); }} 
+                    customSecurity={pendingAuthNote?.lockMode === 'CUSTOM' ? pendingAuthNote.security : undefined}
+                    theme={theme}
+                />
+            </div>
+        )}
+
+        {/* Main Application Layer */}
+        {/* Use hidden instead of unmounting to preserve EditorView state during lock/background */}
+        <div className={`w-full h-full ${isAppLocked ? 'hidden' : 'contents'}`}>
+            {renderContent()}
+        </div>
+      </>
   );
 };
 

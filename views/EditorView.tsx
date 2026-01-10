@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useEditor, EditorContent, ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -24,11 +23,12 @@ interface EditorViewProps {
   folders: Folder[];
   initialEditMode: boolean;
   activeNoteKey: CryptoKey | null;
-  onSave: (note: Note) => void; 
+  onSave: (note: Note, fullText?: string) => void; 
   onBack: () => void;
   onDelete: (id: string) => void;
   onLockToggle: () => void;
   initialSearchQuery?: string;
+  onRequestAuth: () => void;
 }
 
 // --- Custom Nodes (Image, Audio) ---
@@ -52,6 +52,7 @@ const ImageNode = (props: any) => {
             <img 
               src={src} 
               alt={node.attrs.alt}
+              crossOrigin="anonymous"
               className="max-w-full h-auto rounded-2xl shadow-sm border border-black/5 dark:border-white/5 bg-gray-100 dark:bg-gray-800 min-h-[100px]"
               onError={() => setError(true)}
             />
@@ -80,14 +81,14 @@ const AudioExtension = Node.create({
       ],
       ['div', { class: 'flex-1' },
          ['span', { class: 'text-xs font-bold uppercase tracking-wider opacity-60 select-none block mb-1' }, 'Voice Note'],
-         ['audio', mergeAttributes(HTMLAttributes, { controls: true, class: 'h-8 w-full' })]
+         ['audio', mergeAttributes(HTMLAttributes, { controls: true, class: 'h-8 w-full', crossorigin: 'anonymous' })]
       ]
     ]
   },
 });
 
 export const EditorView: React.FC<EditorViewProps> = ({ 
-    note, folders, initialEditMode, activeNoteKey, onSave, onBack, onDelete, onLockToggle, initialSearchQuery
+    note, folders, initialEditMode, activeNoteKey, onSave, onBack, onDelete, onLockToggle, initialSearchQuery, onRequestAuth
 }) => {
   const { theme, styles, getNoteColorStyle } = useTheme();
   
@@ -99,6 +100,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [isDecrypted, setIsDecrypted] = useState(false);
   const [decryptionError, setDecryptionError] = useState(false);
   const [isLoadingContent, setIsLoadingContent] = useState(true);
+  const [isLockedOut, setIsLockedOut] = useState(false);
   
   // Lock to prevent dirty updates during initial load
   const loadingLockRef = useRef(true);
@@ -131,6 +133,22 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const saveTimeoutRef = useRef<any>(null);
   const lastSavedEncryptedDataRef = useRef<string | null>(null);
   const titleTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const lastLoadedNoteId = useRef<string | null>(null);
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
+
+  // Monitor Key State for Session Timeout (Backgrounding)
+  useEffect(() => {
+    if ((note.isLocked || note.isEncrypted) && !activeNoteKey && isDecrypted) {
+        setIsLockedOut(true);
+    } else if (activeNoteKey) {
+        setIsLockedOut(false);
+    }
+  }, [activeNoteKey, note.isLocked, note.isEncrypted, isDecrypted]);
 
   // Haptic Helper
   const triggerHaptic = (duration = 10) => {
@@ -145,7 +163,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
       Placeholder.configure({ placeholder: 'Start typing...', emptyEditorClass: 'is-editor-empty' }),
       AudioExtension, Highlight.configure({ multicolor: true })
     ],
-    editable: isEditing,
+    editable: isEditing && !isLockedOut,
     onUpdate: () => {
         // Only set dirty if the loading lock is released
         if (!loadingLockRef.current) {
@@ -168,11 +186,47 @@ export const EditorView: React.FC<EditorViewProps> = ({
   };
 
   useEffect(() => adjustTitleHeight(), [title, isEditing]);
-  useEffect(() => editor?.setEditable(isEditing && !isLoadingContent), [editor, isEditing, isLoadingContent]);
+  useEffect(() => editor?.setEditable(isEditing && !isLoadingContent && !isLockedOut), [editor, isEditing, isLoadingContent, isLockedOut]);
 
   const expandMedia = useCallback(async (html: string): Promise<string> => {
       const div = document.createElement('div');
       div.innerHTML = html;
+      
+      // --- Security Sanitization ---
+      const sanitizeNode = (node: Element) => {
+          // 1. Remove dangerous elements
+          // Blocks: SCRIPT, IFRAME, OBJECT, EMBED, FORM, SVG, META, STYLE, LINK, BASE
+          const forbiddenTags = ['SCRIPT', 'IFRAME', 'OBJECT', 'EMBED', 'FORM', 'SVG', 'META', 'STYLE', 'LINK', 'BASE', 'APPLET'];
+          if (forbiddenTags.includes(node.tagName)) {
+              node.remove();
+              return;
+          }
+
+          // 2. Strip dangerous attributes
+          const attrs = Array.from(node.attributes);
+          for (const attr of attrs) {
+              const name = attr.name.toLowerCase();
+              const val = attr.value.toLowerCase().trim();
+              
+              // Remove event handlers (onerror, onload, onclick, etc.)
+              if (name.startsWith('on')) {
+                  node.removeAttribute(attr.name);
+              }
+              // Remove javascript/vbscript URIs in src/href
+              if (['href', 'src', 'data', 'action'].includes(name)) {
+                   if (val.startsWith('javascript:') || val.startsWith('vbscript:')) {
+                       node.removeAttribute(attr.name);
+                   }
+              }
+          }
+          
+          // 3. Recurse
+          Array.from(node.children).forEach(child => sanitizeNode(child));
+      };
+      
+      Array.from(div.children).forEach(child => sanitizeNode(child));
+      // -----------------------------
+
       const processElements = async (elements: NodeListOf<Element>) => {
           for (const el of Array.from(elements)) {
               const src = el.getAttribute('src');
@@ -207,11 +261,14 @@ export const EditorView: React.FC<EditorViewProps> = ({
                // Existing tracked file
                img.setAttribute('src', `[[FILE:${filename}]]`);
           } else if (src && src.startsWith('data:')) {
-               // Found Base64 image (pasted or dropped). Save it to disk now.
-               const newFilename = await StorageService.saveMedia(src);
-               if (newFilename) {
-                   img.setAttribute('src', `[[FILE:${newFilename}]]`);
-                   img.setAttribute('data-filename', newFilename);
+               // Found Base64 image (pasted or dropped). 
+               // FIX: Only write to disk if NOT incognito
+               if (!note.isIncognito) {
+                   const newFilename = await StorageService.saveMedia(src);
+                   if (newFilename) {
+                       img.setAttribute('src', `[[FILE:${newFilename}]]`);
+                       img.setAttribute('data-filename', newFilename);
+                   }
                }
           }
       }
@@ -227,6 +284,14 @@ export const EditorView: React.FC<EditorViewProps> = ({
   // --- Content Loading ---
   useEffect(() => {
     const initContent = async () => {
+      // PREVENT STATE LOSS FIX:
+      // If we are already decrypted and displaying this note, DO NOT reload content 
+      // just because activeNoteKey toggled (e.g. app backgrounded/locked).
+      // This preserves unsaved changes (dirty state) while waiting for re-auth.
+      if (isDecrypted && note.id === lastLoadedNoteId.current) {
+          return;
+      }
+
       // Ensure lock is active at start of load
       loadingLockRef.current = true;
       setIsLoadingContent(true);
@@ -275,6 +340,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
       if (!loadedContent) loadedContent = "";
       
       const expanded = await expandMedia(loadedContent);
+      if (!isMounted.current) return;
+
       setTitle(loadedTitle);
       
       if (editor) {
@@ -288,14 +355,19 @@ export const EditorView: React.FC<EditorViewProps> = ({
           }
       }
       
+      // Mark as loaded for this ID
+      lastLoadedNoteId.current = note.id;
+
       // Delay releasing the lock slightly to allow any sync events to settle
       setTimeout(() => {
-          loadingLockRef.current = false;
-          setIsLoadingContent(false);
+          if (isMounted.current) {
+              loadingLockRef.current = false;
+              setIsLoadingContent(false);
+          }
       }, 50);
     };
     initContent();
-  }, [note.id, note.isEncrypted, activeNoteKey, editor, expandMedia]); 
+  }, [note.id, note.isEncrypted, activeNoteKey, editor, expandMedia, isDecrypted]); 
 
   // --- Saving & Search Logic ---
   const performSearch = useCallback((term: string) => {
@@ -345,6 +417,12 @@ export const EditorView: React.FC<EditorViewProps> = ({
     // Prevent saving if editor is not ready or content is still loading to avoid overwriting with empty content
     if (!editor || loadingLockRef.current) return;
     
+    // Check if locked out (key missing)
+    if (isLockedOut) {
+        console.warn("Save aborted: Note is locked out.");
+        return;
+    }
+
     console.log('[EditorView] handleSave triggered');
     
     const { from, to } = editor.state.selection;
@@ -359,11 +437,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
     const plainText = editor.getText();
     const compressedContent = await compressMedia(currentHtml);
 
-    let updatedNote: Note = {
+    // Prepare base properties (excluding content/encryption specific fields)
+    const baseNote: Note = {
       ...note,
       title,
-      content: compressedContent,
-      plainTextPreview: plainText.substring(0, 300),
       updatedAt: Date.now(),
       isSynced: false,
       tags,
@@ -372,42 +449,81 @@ export const EditorView: React.FC<EditorViewProps> = ({
       location: location
     };
 
-    if (updatedNote.isLocked && activeNoteKey) {
+    let finalNote: Note;
+
+    if (baseNote.isLocked) {
+        // SECURITY CHECK: Abort save if key is missing
+        if (!activeNoteKey) {
+            console.warn("Save aborted: Note is locked but encryption key is missing.");
+            return;
+        }
+
         try {
             const payload = JSON.stringify({ title, content: compressedContent });
             const encrypted = await SecurityService.encrypt(payload, activeNoteKey);
             const encryptedString = JSON.stringify(encrypted);
-            updatedNote.encryptedData = encryptedString;
+            
+            finalNote = {
+                ...baseNote,
+                title: "", // Privacy: Clear title from metadata so it's not visible in list
+                content: undefined, // Explicitly undefined so StorageService cleans up plaintext
+                encryptedData: encryptedString,
+                plainTextPreview: "",
+            };
             lastSavedEncryptedDataRef.current = encryptedString;
-            updatedNote.content = undefined; 
-            updatedNote.plainTextPreview = "";
-        } catch (e) { console.error("Encryption failed", e); return; }
-    } else if (!updatedNote.isLocked) {
-        updatedNote.encryptedData = undefined;
-        updatedNote.lockMode = undefined;
-        updatedNote.security = undefined;
-        updatedNote.content = compressedContent;
-        updatedNote.title = title;
+        } catch (e) { 
+            console.error("Encryption failed", e); 
+            if (isMounted.current) {
+                setAlertConfig({ 
+                    isOpen: true, 
+                    title: "Save Error", 
+                    message: "Failed to encrypt note. Changes were not saved." 
+                });
+            }
+            return; 
+        }
+    } else {
+        // Unlocked mode
+        finalNote = {
+            ...baseNote,
+            content: compressedContent,
+            plainTextPreview: plainText.substring(0, 300),
+            encryptedData: undefined,
+            lockMode: undefined,
+            security: undefined,
+            isLocked: false // Enforce unlocked state if we are here
+        };
     }
 
-    onSave(updatedNote);
-    setIsDirty(false);
-    console.log('[EditorView] Save complete. isDirty reset to false.');
+    // Pass the full plain text for indexing
+    onSave(finalNote, plainText);
     
-    if (wasSearching && editorSearchTerm) performSearch(editorSearchTerm);
-  }, [note, title, tags, color, folderId, location, onSave, activeNoteKey, editor, showSearch, editorSearchTerm, performSearch]);
+    // Check if mounted before updating local state
+    if (isMounted.current) {
+        setIsDirty(false);
+        console.log('[EditorView] Save complete. isDirty reset to false.');
+        if (wasSearching && editorSearchTerm) performSearch(editorSearchTerm);
+    }
+  }, [note, title, tags, color, folderId, location, onSave, activeNoteKey, editor, showSearch, editorSearchTerm, performSearch, isLockedOut]);
 
   const handleSaveRef = useRef(handleSave);
   useEffect(() => { handleSaveRef.current = handleSave; }, [handleSave]);
 
-  const handleBackAction = useCallback(() => {
-      if (isDirty) {
-          handleSave();
-          triggerHaptic(20);
-          onBack();
-      } else {
-          onBack();
+  const handleBackAction = useCallback(async () => {
+      // FIX: Clear pending autosave to prevent race conditions
+      if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+          saveTimeoutRef.current = null;
       }
+
+      if (isDirty) {
+          await handleSave(); // WAIT for save to complete before unmounting
+          triggerHaptic(20);
+      }
+      
+      // Explicitly prevent unmount cleanup since we handled save/dirty state here
+      skipSaveOnUnmount.current = true;
+      onBack();
   }, [isDirty, onBack, handleSave]);
 
   useEffect(() => {
@@ -432,6 +548,19 @@ export const EditorView: React.FC<EditorViewProps> = ({
     return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
   }, [title, tags, color, folderId, location, handleSave, isDecrypted, isLoadingContent, isDirty]);
 
+  // Ensure save on App Background/Pause (e.g. switching apps, home button)
+  // This covers the case where "unmount" cleanup might not run reliably on OS kill
+  useEffect(() => {
+      const listener = CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+          if (!isActive && isDirty && !isLoadingContent && !isLockedOut) {
+             console.log('[EditorView] App backgrounded - saving dirty note');
+             handleSaveRef.current();
+          }
+      });
+      return () => { listener.then(h => h.remove()); };
+  }, [isDirty, isLoadingContent, isLockedOut]);
+
+  // Standard cleanup - attempts to save on component unmount
   useEffect(() => { return () => { if (!skipSaveOnUnmount.current) handleSaveRef.current(); }; }, []);
 
   // --- Actions ---
@@ -445,10 +574,16 @@ export const EditorView: React.FC<EditorViewProps> = ({
           reader.onload = async (event) => {
               const base64 = event.target?.result as string;
               if (base64) {
-                  const filename = await StorageService.saveMedia(base64);
-                  if (filename) {
-                      const url = await StorageService.getMediaUrl(filename);
-                      if (url) editor.chain().focus().insertContent({ type: 'image', attrs: { src: url, 'data-filename': filename } }).run();
+                  // FIX: Incognito leak check
+                  if (note.isIncognito) {
+                      // Keep inline, do not save to disk
+                      editor.chain().focus().insertContent({ type: 'image', attrs: { src: base64 } }).run();
+                  } else {
+                      const filename = await StorageService.saveMedia(base64);
+                      if (filename) {
+                          const url = await StorageService.getMediaUrl(filename);
+                          if (url) editor.chain().focus().insertContent({ type: 'image', attrs: { src: url, 'data-filename': filename } }).run();
+                      }
                   }
               }
           };
@@ -474,10 +609,15 @@ export const EditorView: React.FC<EditorViewProps> = ({
                   reader.readAsDataURL(audioBlob);
                   reader.onloadend = async () => {
                       const base64data = reader.result as string;
-                      const filename = await StorageService.saveMedia(base64data);
-                      if (filename && editor) {
-                        const url = await StorageService.getMediaUrl(filename);
-                        if (url) editor.chain().focus().insertContent({ type: 'audio', attrs: { src: url, 'data-filename': filename } }).run();
+                      // FIX: Incognito leak check
+                      if (note.isIncognito) {
+                           editor.chain().focus().insertContent({ type: 'audio', attrs: { src: base64data } }).run();
+                      } else {
+                          const filename = await StorageService.saveMedia(base64data);
+                          if (filename && editor) {
+                            const url = await StorageService.getMediaUrl(filename);
+                            if (url) editor.chain().focus().insertContent({ type: 'audio', attrs: { src: url, 'data-filename': filename } }).run();
+                          }
                       }
                       stream.getTracks().forEach(track => track.stop());
                   };
@@ -614,9 +754,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
                     value={title}
                     onChange={(e) => { setTitle(e.target.value); setIsDirty(true); }}
                     placeholder="Title"
-                    readOnly={!isEditing || isLoadingContent}
+                    readOnly={!isEditing || isLoadingContent || isLockedOut}
                     rows={1}
-                    className={`w-full bg-transparent border-none outline-none resize-none font-bold text-3xl md:text-4xl leading-tight mb-2 placeholder:opacity-30 ${styles.text} ${isLoadingContent ? 'opacity-50' : ''}`}
+                    className={`w-full bg-transparent border-none outline-none resize-none font-bold text-3xl md:text-4xl leading-tight mb-2 placeholder:opacity-30 ${styles.text} ${isLoadingContent || isLockedOut ? 'opacity-50' : ''}`}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); editor?.commands.focus(); } }}
                  />
 
@@ -666,8 +806,29 @@ export const EditorView: React.FC<EditorViewProps> = ({
              </div>
         </div>
 
+        {/* Lockout Overlay */}
+        {isLockedOut && (
+            <div className={`absolute inset-0 z-50 flex flex-col items-center justify-center p-6 backdrop-blur-md bg-white/80 dark:bg-black/80 animate-slide-in`}>
+                <div className={`p-6 rounded-3xl shadow-2xl text-center max-w-sm ${styles.cardBase} ${styles.cardBorder} border`}>
+                    <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center ${styles.dangerBg} ${styles.dangerText}`}>
+                        <Icon name="lock" size={32} />
+                    </div>
+                    <h3 className={`text-xl font-bold mb-2 ${styles.text}`}>Session Expired</h3>
+                    <p className={`text-sm opacity-70 mb-6 ${styles.secondaryText}`}>
+                        For your security, this note has been locked because the app was backgrounded.
+                    </p>
+                    <button 
+                        onClick={onRequestAuth}
+                        className={`w-full py-3 rounded-xl font-bold text-white shadow-lg active:scale-95 transition-all ${styles.fab}`}
+                    >
+                        Unlock Note
+                    </button>
+                </div>
+            </div>
+        )}
+
         {/* --- View Mode FAB (Quick Edit) --- */}
-        {!isEditing && !isLoadingContent && (
+        {!isEditing && !isLoadingContent && !isLockedOut && (
             <button 
                 onClick={() => { setIsEditing(true); triggerHaptic(20); }} 
                 className={`fixed bottom-8 right-6 w-14 h-14 rounded-2xl flex items-center justify-center shadow-xl active:scale-95 transition-all z-30 ${styles.fab}`}
@@ -677,7 +838,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
         )}
 
         {/* --- Edit Mode Toolbar --- */}
-        {isEditing && !isLoadingContent && (
+        {isEditing && !isLoadingContent && !isLockedOut && (
             <div className={`shrink-0 z-20 flex w-full items-stretch ${styles.cardBase} border-t ${styles.divider} pb-[env(safe-area-inset-bottom)]`}>
                 <div className="flex-1 overflow-x-auto no-scrollbar mask-linear-fade">
                     <div className="flex items-center gap-1 p-2 px-4 min-w-max">

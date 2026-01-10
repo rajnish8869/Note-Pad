@@ -26,32 +26,6 @@ export const AuthModal: React.FC<{
         return 0;
     }, [customSecurity]);
 
-    useEffect(() => {
-        if (!customSecurity) {
-            NativeBiometric.isAvailable().then(result => {
-                setBioAvailable(result.isAvailable);
-                if (result.isAvailable) performBiometricAuth();
-            }).catch(() => setBioAvailable(false));
-        }
-    }, [customSecurity]);
-
-    const performBiometricAuth = async () => {
-        try {
-            await NativeBiometric.verifyIdentity({
-                reason: "Unlock CloudPad",
-                title: "Authentication Required",
-                subtitle: "Use fingerprint or Face ID",
-                description: "Confirm identity to access secured notes"
-            });
-            const creds = await NativeBiometric.getCredentials({ server: "com.cloudpad.app" });
-            if (creds && creds.username === "global_pin" && creds.password) {
-                 handleVerify(creds.password);
-            } 
-        } catch (e) {
-            console.log("Biometric Auth skipped or failed", e);
-        }
-    };
-
     const handleVerify = useCallback(async (code: string) => {
         let storedSalt: string | null = null;
         let storedVerifier: string | null = null;
@@ -78,6 +52,71 @@ export const AuthModal: React.FC<{
         }
     }, [customSecurity, onUnlock]);
 
+    // Biometric Logic
+    useEffect(() => {
+        let isActive = true;
+
+        const checkBiometric = async () => {
+            // Biometrics are only for Global Auth (stored credentials), not Custom/Private notes
+            if (customSecurity) {
+                if (isActive) setBioAvailable(false);
+                return;
+            }
+
+            try {
+                const result = await NativeBiometric.isAvailable();
+                if (!isActive) return;
+
+                setBioAvailable(result.isAvailable);
+
+                if (result.isAvailable) {
+                    try {
+                        await NativeBiometric.verifyIdentity({
+                            reason: "Unlock CloudPad",
+                            title: "Authentication Required",
+                            subtitle: "Use fingerprint or Face ID",
+                            description: "Confirm identity to access secured notes"
+                        });
+                        
+                        const creds = await NativeBiometric.getCredentials({ server: "com.cloudpad.app" });
+                        
+                        if (isActive && creds && creds.username === "global_pin" && creds.password) {
+                             handleVerify(creds.password);
+                        }
+                    } catch (e) {
+                        console.log("Biometric Auth skipped or failed", e);
+                    }
+                }
+            } catch (e) {
+                if (isActive) setBioAvailable(false);
+            }
+        };
+
+        checkBiometric();
+
+        return () => { isActive = false; };
+    }, [customSecurity, handleVerify]);
+
+    // Manual trigger for biometric (clicking the icon)
+    const triggerBiometric = async () => {
+        if (!bioAvailable || customSecurity) return;
+        
+        try {
+            await NativeBiometric.verifyIdentity({
+                reason: "Unlock CloudPad",
+                title: "Authentication Required",
+                subtitle: "Use fingerprint or Face ID",
+                description: "Confirm identity to access secured notes"
+            });
+            const creds = await NativeBiometric.getCredentials({ server: "com.cloudpad.app" });
+            if (creds && creds.username === "global_pin" && creds.password) {
+                 handleVerify(creds.password);
+            } 
+        } catch (e) {
+            console.log("Biometric Auth skipped or failed", e);
+        }
+    };
+
     useEffect(() => {
         if (targetLength > 0 && pin.length === targetLength) {
             handleVerify(pin);
@@ -93,7 +132,7 @@ export const AuthModal: React.FC<{
         <div className="flex-1 flex flex-col items-center justify-center">
             <div 
                 className={`mb-6 transition-all cursor-pointer ${error ? "animate-[shake_0.5s_ease-in-out]" : ""} ${s.icon}`}
-                onClick={() => bioAvailable && !customSecurity && performBiometricAuth()}
+                onClick={triggerBiometric}
             >
                 {bioAvailable && !customSecurity ? (
                      <div className="flex flex-col items-center gap-2">
