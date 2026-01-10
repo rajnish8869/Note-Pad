@@ -40,6 +40,7 @@ class Mutex {
 
 export class StorageService {
   private static indexMutex = new Mutex();
+  private static searchIndexMutex = new Mutex();
   private static searchCache: Record<string, string> | null = null;
 
   static async init(): Promise<void> {
@@ -219,17 +220,23 @@ export class StorageService {
           await this.removeFromSearchIndex(id);
           return;
       }
-      const index = await this.getSearchIndex();
-      index[id] = text.toLowerCase();
-      await this.saveSearchIndex(index);
+      // Mutex protected read-modify-write
+      await this.searchIndexMutex.dispatch(async () => {
+          const index = await this.getSearchIndex();
+          index[id] = text.toLowerCase();
+          await this.saveSearchIndex(index);
+      });
   }
 
   private static async removeFromSearchIndex(id: string): Promise<void> {
-      const index = await this.getSearchIndex();
-      if (index[id] !== undefined) {
-          delete index[id];
-          await this.saveSearchIndex(index);
-      }
+      // Mutex protected read-modify-write
+      await this.searchIndexMutex.dispatch(async () => {
+          const index = await this.getSearchIndex();
+          if (index[id] !== undefined) {
+              delete index[id];
+              await this.saveSearchIndex(index);
+          }
+      });
   }
 
   private static async saveSearchIndex(index: Record<string, string>): Promise<void> {
@@ -240,9 +247,11 @@ export class StorageService {
   static async search(query: string): Promise<string[]> {
       if (!query) return [];
       const lowerQuery = query.toLowerCase();
-      const index = await this.getSearchIndex();
-      // Simple substring search
-      return Object.keys(index).filter(id => index[id] && index[id].includes(lowerQuery));
+      // Mutex protected read to ensure consistency
+      return await this.searchIndexMutex.dispatch(async () => {
+          const index = await this.getSearchIndex();
+          return Object.keys(index).filter(id => index[id] && index[id].includes(lowerQuery));
+      });
   }
 
   // --- Metadata Operations ---

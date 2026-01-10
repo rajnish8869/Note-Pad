@@ -1,10 +1,11 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNotes } from '../contexts/NotesContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { NoteCard } from '../components/NoteCard';
 import { Icon } from '../components/Icon';
 import { BottomSheet } from '../components/BottomSheet';
-import { Note, NoteMetadata, ViewState } from '../types';
+import { NoteMetadata, ViewState } from '../types';
 import { Virtuoso } from 'react-virtuoso';
 
 interface Props {
@@ -80,30 +81,40 @@ export const NoteListView: React.FC<Props> = ({
   // Handle Deep Search via StorageService
   useEffect(() => {
       let isActive = true;
-      if (!searchQuery) {
-          setContentSearchResults(null);
-          return;
-      }
+      let timer: any = null;
 
-      if (isIncognito) {
-          // In-memory search for incognito (Notes are available in memory)
-          const results = notes.filter(n => {
-              // Incognito notes in 'notes' array are actually full Note objects
-              const content = (n as any).content || ""; 
-              // Simple heuristic: search content string (contains HTML but better than nothing)
-              return content.toLowerCase().includes(searchQuery.toLowerCase());
-          }).map(n => n.id);
-          setContentSearchResults(new Set(results));
-      } else {
-          // Storage search (Deep Search)
-          const doSearch = async () => {
-              const ids = await searchNotes(searchQuery);
-              if (isActive) setContentSearchResults(new Set(ids));
-          };
-          // Debounce search
-          const timer = setTimeout(doSearch, 300);
-          return () => { isActive = false; clearTimeout(timer); };
-      }
+      const runEffect = async () => {
+          if (!searchQuery) {
+              setContentSearchResults(null);
+              return;
+          }
+
+          if (isIncognito) {
+              // In-memory search for incognito (Notes are available in memory)
+              const results = notes.filter(n => {
+                  // Incognito notes in 'notes' array are actually full Note objects
+                  const content = (n as any).content || ""; 
+                  // Simple heuristic: search content string (contains HTML but better than nothing)
+                  return content.toLowerCase().includes(searchQuery.toLowerCase());
+              }).map(n => n.id);
+              if (isActive) setContentSearchResults(new Set(results));
+          } else {
+              // Storage search (Deep Search)
+              const doSearch = async () => {
+                  const ids = await searchNotes(searchQuery);
+                  if (isActive) setContentSearchResults(new Set(ids));
+              };
+              // Debounce search
+              timer = setTimeout(doSearch, 300);
+          }
+      };
+
+      runEffect();
+
+      return () => { 
+          isActive = false; 
+          if (timer) clearTimeout(timer); 
+      };
   }, [searchQuery, isIncognito, notes, searchNotes]);
 
 
@@ -168,7 +179,11 @@ export const NoteListView: React.FC<Props> = ({
 
   // Split Logic (Pinned vs Others)
   const { pinnedNotes, otherNotes, showPinnedSection } = useMemo(() => {
-      const shouldSplit = view !== 'TRASH' && activeFilter === 'ALL' && sortBy === 'UPDATED';
+      // Only split into "Pinned" vs "Others" if we are in default view (ALL + UPDATED)
+      // AND there are actually unpinned notes to separate from.
+      // If ALL notes are pinned, just show them in the main list.
+      const hasUnpinned = rawFilteredNotes.some(n => !n.isPinned);
+      const shouldSplit = view !== 'TRASH' && activeFilter === 'ALL' && sortBy === 'UPDATED' && hasUnpinned;
       
       if (shouldSplit) {
           const pinned = sortNotes(rawFilteredNotes.filter(n => n.isPinned));
@@ -176,7 +191,7 @@ export const NoteListView: React.FC<Props> = ({
           return { 
               pinnedNotes: pinned, 
               otherNotes: others, 
-              showPinnedSection: pinned.length > 0 && others.length > 0 
+              showPinnedSection: pinned.length > 0
           };
       }
       
@@ -421,7 +436,7 @@ export const NoteListView: React.FC<Props> = ({
                                 />
                             ))}
                         </div>
-                         <div className={`text-xs font-bold uppercase tracking-wider mt-6 mb-3 px-1 opacity-50 ${styles.text}`}>Others</div>
+                         {otherNotes.length > 0 && <div className={`text-xs font-bold uppercase tracking-wider mt-6 mb-3 px-1 opacity-50 ${styles.text}`}>Others</div>}
                     </div>
                 )}
                 
