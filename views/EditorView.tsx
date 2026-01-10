@@ -168,7 +168,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   };
 
   useEffect(() => adjustTitleHeight(), [title, isEditing]);
-  useEffect(() => editor?.setEditable(isEditing), [editor, isEditing]);
+  useEffect(() => editor?.setEditable(isEditing && !isLoadingContent), [editor, isEditing, isLoadingContent]);
 
   const expandMedia = useCallback(async (html: string): Promise<string> => {
       const div = document.createElement('div');
@@ -342,7 +342,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
   };
 
   const handleSave = useCallback(async () => {
-    if (!editor) return;
+    // Prevent saving if editor is not ready or content is still loading to avoid overwriting with empty content
+    if (!editor || loadingLockRef.current) return;
+    
     console.log('[EditorView] handleSave triggered');
     
     const { from, to } = editor.state.selection;
@@ -509,14 +511,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const noteColorClass = getNoteColorStyle(color);
   const editorBgClass = theme === 'neo-glass' ? 'bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 bg-fixed' : noteColorClass.split(' ')[0]; 
 
-  if (isLoadingContent || (!isDecrypted && !decryptionError)) {
-      return (
-          <div className={`flex flex-col min-h-[100dvh] items-center justify-center ${editorBgClass}`}>
-              <Icon name="cloud" size={48} className={`animate-pulse opacity-50 mb-4 ${styles.text}`} />
-          </div>
-      );
-  }
-
   if (decryptionError) {
       return (
         <div className={`flex flex-col min-h-[100dvh] items-center justify-center ${editorBgClass}`}>
@@ -553,7 +547,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                      </>
                  )}
 
-                 {isEditing ? (
+                 {isEditing && !isLoadingContent ? (
                     <>
                         <button onClick={() => editor?.chain().focus().undo().run()} disabled={!editor?.can().undo()} className={`p-3 rounded-full opacity-70 ${!editor?.can().undo() ? 'opacity-30' : ''} ${styles.text}`}><Icon name="undo" size={20} /></button>
                         <button onClick={() => editor?.chain().focus().redo().run()} disabled={!editor?.can().redo()} className={`p-3 rounded-full opacity-70 ${!editor?.can().redo() ? 'opacity-30' : ''} ${styles.text}`}><Icon name="redo" size={20} /></button>
@@ -566,9 +560,11 @@ export const EditorView: React.FC<EditorViewProps> = ({
                     </>
                  ) : (
                     <>
-                        <button onClick={() => { setIsEditing(true); triggerHaptic(10); }} className={`p-3 rounded-full ${styles.iconHover} ${styles.text}`}>
-                            <Icon name="edit" size={22} />
-                        </button>
+                        {!isLoadingContent && (
+                            <button onClick={() => { setIsEditing(true); triggerHaptic(10); }} className={`p-3 rounded-full ${styles.iconHover} ${styles.text}`}>
+                                <Icon name="edit" size={22} />
+                            </button>
+                        )}
                         <button 
                             onClick={() => {
                                 setShowSearch(!showSearch);
@@ -576,6 +572,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                                 else { setShowSearch(false); setEditorSearchTerm(""); }
                             }} 
                             className={`p-3 rounded-full ${showSearch ? styles.primaryText : `${styles.iconHover} ${styles.text}`}`}
+                            disabled={isLoadingContent}
                         >
                             <Icon name="search" size={22} />
                         </button>
@@ -617,9 +614,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
                     value={title}
                     onChange={(e) => { setTitle(e.target.value); setIsDirty(true); }}
                     placeholder="Title"
-                    readOnly={!isEditing}
+                    readOnly={!isEditing || isLoadingContent}
                     rows={1}
-                    className={`w-full bg-transparent border-none outline-none resize-none font-bold text-3xl md:text-4xl leading-tight mb-2 placeholder:opacity-30 ${styles.text}`}
+                    className={`w-full bg-transparent border-none outline-none resize-none font-bold text-3xl md:text-4xl leading-tight mb-2 placeholder:opacity-30 ${styles.text} ${isLoadingContent ? 'opacity-50' : ''}`}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); editor?.commands.focus(); } }}
                  />
 
@@ -657,13 +654,20 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
                  {/* Editor */}
                  <div className={`min-h-[50vh] text-lg leading-relaxed break-words pb-20 ${styles.text}`}>
-                      <EditorContent editor={editor} />
+                      {isLoadingContent ? (
+                          <div className="flex flex-col items-center justify-center h-48 opacity-50">
+                               <Icon name="cloud" size={32} className="animate-pulse mb-2" />
+                               <span className="text-xs font-medium">Loading content...</span>
+                          </div>
+                      ) : (
+                          <EditorContent editor={editor} />
+                      )}
                  </div>
              </div>
         </div>
 
         {/* --- View Mode FAB (Quick Edit) --- */}
-        {!isEditing && (
+        {!isEditing && !isLoadingContent && (
             <button 
                 onClick={() => { setIsEditing(true); triggerHaptic(20); }} 
                 className={`fixed bottom-8 right-6 w-14 h-14 rounded-2xl flex items-center justify-center shadow-xl active:scale-95 transition-all z-30 ${styles.fab}`}
@@ -673,7 +677,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
         )}
 
         {/* --- Edit Mode Toolbar --- */}
-        {isEditing && (
+        {isEditing && !isLoadingContent && (
             <div className={`shrink-0 z-20 flex w-full items-stretch ${styles.cardBase} border-t ${styles.divider} pb-[env(safe-area-inset-bottom)]`}>
                 <div className="flex-1 overflow-x-auto no-scrollbar mask-linear-fade">
                     <div className="flex items-center gap-1 p-2 px-4 min-w-max">
