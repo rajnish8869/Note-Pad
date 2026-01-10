@@ -74,8 +74,6 @@ const AudioExtension = Node.create({
   addAttributes() { return { src: { default: null }, 'data-filename': { default: null } } },
   parseHTML() { return [{ tag: 'audio' }] },
   renderHTML({ HTMLAttributes }) {
-      // NOTE: Tailwind classes for color in renderHTML must be hardcoded or generic enough, 
-      // but we can use CSS variables injected by ThemeContext for the primary color.
     return ['div', { class: 'my-2 p-3 bg-gray-100 dark:bg-gray-800 rounded-2xl flex items-center gap-3 border border-black/5' },
       ['div', { class: 'p-2 rounded-full text-white', style: 'background-color: var(--primary-color)' }, 
         ['svg', { xmlns: "http://www.w3.org/2000/svg", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round" }, ['path', { d: "M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" }]]
@@ -102,6 +100,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [decryptionError, setDecryptionError] = useState(false);
   const [isLoadingContent, setIsLoadingContent] = useState(true);
   
+  // Lock to prevent dirty updates during initial load
+  const loadingLockRef = useRef(true);
+
   const [tags, setTags] = useState<string[]>(note.tags || []);
   const [color, setColor] = useState(note.color || 'default');
   const [folderId, setFolderId] = useState(note.folderId || '');
@@ -145,10 +146,15 @@ export const EditorView: React.FC<EditorViewProps> = ({
       AudioExtension, Highlight.configure({ multicolor: true })
     ],
     editable: isEditing,
-    onUpdate: () => setIsDirty(true),
+    onUpdate: () => {
+        // Only set dirty if the loading lock is released
+        if (!loadingLockRef.current) {
+             setIsDirty(true);
+        }
+    },
     editorProps: {
       attributes: {
-        class: `prose max-w-none focus:outline-none ${styles.isDark ? 'prose-invert' : ''}`, // Simplistic check, logic handled by context now
+        class: `prose max-w-none focus:outline-none ${styles.isDark ? 'prose-invert' : ''}`, 
       },
     },
   });
@@ -221,17 +227,18 @@ export const EditorView: React.FC<EditorViewProps> = ({
   // --- Content Loading ---
   useEffect(() => {
     const initContent = async () => {
+      // Ensure lock is active at start of load
+      loadingLockRef.current = true;
       setIsLoadingContent(true);
+
       let loadedContent = note.content;
       let loadedTitle = note.title;
       let loadedEncryptedData = note.encryptedData;
 
-      // Lazy Load content if missing
       if (!loadedContent && !loadedEncryptedData && !note.isEncrypted) {
          loadedContent = await StorageService.getNoteContent(note.id);
       }
       
-      // Lazy Load Encrypted Data if missing but flag is true
       if (!loadedEncryptedData && note.isEncrypted) {
           const fetchedEnc = await StorageService.getEncryptedData(note.id);
           if (fetchedEnc) loadedEncryptedData = fetchedEnc;
@@ -241,6 +248,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
         if (!activeNoteKey || !loadedEncryptedData) {
            setDecryptionError(true);
            setIsLoadingContent(false);
+           loadingLockRef.current = false; // Release lock even on error
            return;
         }
         try {
@@ -256,6 +264,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
            console.error("Decryption fail", e);
            setDecryptionError(true);
            setIsLoadingContent(false);
+           loadingLockRef.current = false;
            return;
         }
       } else {
@@ -263,24 +272,30 @@ export const EditorView: React.FC<EditorViewProps> = ({
         setDecryptionError(false);
       }
       
-      // Fallback for empty content
       if (!loadedContent) loadedContent = "";
       
       const expanded = await expandMedia(loadedContent);
       setTitle(loadedTitle);
       
       if (editor) {
+          // Setting content triggers onUpdate, but loadingLockRef is true, so isDirty remains false
           editor.commands.setContent(expanded);
+          
           if (initialSearchQuery) {
               setEditorSearchTerm(initialSearchQuery);
               setShowSearch(true);
               setTimeout(() => performSearch(initialSearchQuery), 100);
           }
       }
-      setIsLoadingContent(false);
+      
+      // Delay releasing the lock slightly to allow any sync events to settle
+      setTimeout(() => {
+          loadingLockRef.current = false;
+          setIsLoadingContent(false);
+      }, 50);
     };
     initContent();
-  }, [note.id, note.isEncrypted, activeNoteKey, editor, expandMedia]); // Removed specific content deps to prevent loops
+  }, [note.id, note.isEncrypted, activeNoteKey, editor, expandMedia]); 
 
   // --- Saving & Search Logic ---
   const performSearch = useCallback((term: string) => {
@@ -328,6 +343,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   const handleSave = useCallback(async () => {
     if (!editor) return;
+    console.log('[EditorView] handleSave triggered');
+    
     const { from, to } = editor.state.selection;
     const wasSearching = showSearch;
     if (wasSearching) {
@@ -338,7 +355,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
     const currentHtml = editor.getHTML();
     const plainText = editor.getText();
-    // Compress media to ensure no Base64 strings are saved in the content
     const compressedContent = await compressMedia(currentHtml);
 
     let updatedNote: Note = {
@@ -361,7 +377,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
             const encryptedString = JSON.stringify(encrypted);
             updatedNote.encryptedData = encryptedString;
             lastSavedEncryptedDataRef.current = encryptedString;
-            // Clear plain content to not save it
             updatedNote.content = undefined; 
             updatedNote.plainTextPreview = "";
         } catch (e) { console.error("Encryption failed", e); return; }
@@ -375,6 +390,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
     onSave(updatedNote);
     setIsDirty(false);
+    console.log('[EditorView] Save complete. isDirty reset to false.');
     
     if (wasSearching && editorSearchTerm) performSearch(editorSearchTerm);
   }, [note, title, tags, color, folderId, location, onSave, activeNoteKey, editor, showSearch, editorSearchTerm, performSearch]);
@@ -404,9 +420,15 @@ export const EditorView: React.FC<EditorViewProps> = ({
   useEffect(() => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     if (!isDecrypted || isLoadingContent) return;
-    saveTimeoutRef.current = setTimeout(() => { handleSave(); }, 2000); 
+    
+    // CRITICAL FIX: Only schedule autosave if strictly dirty
+    if (isDirty) {
+        console.log('[EditorView] Scheduling autosave (dirty=true)');
+        saveTimeoutRef.current = setTimeout(() => { handleSave(); }, 2000); 
+    }
+
     return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
-  }, [title, tags, color, folderId, location, handleSave, isDecrypted, isLoadingContent]);
+  }, [title, tags, color, folderId, location, handleSave, isDecrypted, isLoadingContent, isDirty]);
 
   useEffect(() => { return () => { if (!skipSaveOnUnmount.current) handleSaveRef.current(); }; }, []);
 
@@ -484,7 +506,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
       return editor.storage.characterCount?.words?.() ?? editor.getText().split(/\s+/).filter(w => w.length > 0).length;
   }, [editor, isDirty]); 
 
-  // Use helper to resolve color based on current theme
   const noteColorClass = getNoteColorStyle(color);
   const editorBgClass = theme === 'neo-glass' ? 'bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 bg-fixed' : noteColorClass.split(' ')[0]; 
 
@@ -520,11 +541,16 @@ export const EditorView: React.FC<EditorViewProps> = ({
             </button>
             
             <div className="flex gap-1 items-center">
-                 {!isDirty && !isEditing && (
-                    <span className={`text-[10px] font-bold uppercase tracking-wider opacity-40 mr-2 ${styles.text}`}>Saved</span>
-                 )}
-                 {isDirty && (
-                    <span className={`text-[10px] font-bold uppercase tracking-wider opacity-60 mr-2 ${styles.text}`}>Saving...</span>
+                 {/* Only show status if Editing OR Dirty */}
+                 {(isEditing || isDirty) && (
+                     <>
+                        {!isDirty && (
+                            <span className={`text-[10px] font-bold uppercase tracking-wider opacity-40 mr-2 ${styles.text}`}>Saved</span>
+                        )}
+                        {isDirty && (
+                            <span className={`text-[10px] font-bold uppercase tracking-wider opacity-60 mr-2 ${styles.text}`}>Saving...</span>
+                        )}
+                     </>
                  )}
 
                  {isEditing ? (

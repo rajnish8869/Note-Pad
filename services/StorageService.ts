@@ -136,13 +136,35 @@ export class StorageService {
   // --- Combined Save Operation ---
 
   static async saveNote(note: Note): Promise<NoteMetadata> {
+      console.log(`[StorageService] saveNote ${note.id} | Content defined: ${note.content !== undefined} | EncryptedData defined: ${note.encryptedData !== undefined}`);
+
       // 1. Prepare Metadata
       const { content, encryptedData, ...rest } = note;
+      
+      // Preserve existing flags unless new content forces calculation
+      let hasImage = rest.hasImage;
+      let hasAudio = rest.hasAudio;
+      let isEncrypted = rest.isEncrypted;
+
+      if (content !== undefined) {
+          hasImage = content.includes('<img');
+          hasAudio = content.includes('<audio');
+      }
+
+      // Determine encryption status based on payload presence
+      if (encryptedData !== undefined) {
+          isEncrypted = true;
+      } else if (content !== undefined) {
+          // If explicit content is provided, it implies plaintext
+          isEncrypted = false;
+      }
+      // If both undefined (partial update), isEncrypted remains as passed in 'rest'
+
       const metadata: NoteMetadata = {
           ...rest,
-          hasImage: content ? content.includes('<img') : false,
-          hasAudio: content ? content.includes('<audio') : false,
-          isEncrypted: !!encryptedData
+          hasImage,
+          hasAudio,
+          isEncrypted: !!isEncrypted
       };
 
       // 2. Save Content (Separately)
@@ -162,14 +184,20 @@ export class StorageService {
   }
 
   private static async saveNoteContentDirectly(note: Note): Promise<void> {
-      if (note.encryptedData) {
+      // CRITICAL: Only write to storage if content/data is strictly defined.
+      // Passing 'undefined' means "don't change content", useful for metadata updates (move folder, pin, etc).
+      // Passing empty string "" means "clear content".
+      
+      if (note.encryptedData !== undefined) {
           await localforage.setItem(`${NOTE_CONTENT_PREFIX}enc_${note.id}`, note.encryptedData);
           // Cleanup cleartext if exists
           await localforage.removeItem(`${NOTE_CONTENT_PREFIX}${note.id}`);
-      } else {
-          await localforage.setItem(`${NOTE_CONTENT_PREFIX}${note.id}`, note.content || "");
+      } else if (note.content !== undefined) {
+          await localforage.setItem(`${NOTE_CONTENT_PREFIX}${note.id}`, note.content);
           // Cleanup encrypted if exists
           await localforage.removeItem(`${NOTE_CONTENT_PREFIX}enc_${note.id}`);
+      } else {
+          console.log(`[StorageService] Skipping content write for ${note.id} (Metadata only update)`);
       }
   }
 
