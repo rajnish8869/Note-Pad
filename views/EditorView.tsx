@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useEditor, EditorContent, ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -53,7 +52,6 @@ const ImageNode = (props: any) => {
             <img 
               src={src} 
               alt={node.attrs.alt}
-              data-filename={node.attrs.dataFileName} // Critical: Ensure attribute is present in DOM for Copy/Paste serialization
               crossOrigin="anonymous"
               className="max-w-full h-auto rounded-2xl shadow-sm border border-black/5 dark:border-white/5 bg-gray-100 dark:bg-gray-800 min-h-[100px]"
               onError={() => setError(true)}
@@ -65,25 +63,7 @@ const ImageNode = (props: any) => {
 };
 
 const CustomImage = Image.extend({
-  addAttributes() {
-    return {
-      src: { default: null },
-      alt: { default: null },
-      title: { default: null },
-      dataFileName: {
-        default: null,
-        parseHTML: element => element.getAttribute('data-filename'),
-        renderHTML: attributes => {
-          if (!attributes.dataFileName) {
-            return {};
-          }
-          return {
-            'data-filename': attributes.dataFileName,
-          };
-        },
-      },
-    };
-  },
+  addAttributes() { return { src: { default: null }, alt: { default: null }, title: { default: null }, 'data-filename': { default: null } }; },
   addNodeView() { return ReactNodeViewRenderer(ImageNode); },
 });
 
@@ -92,19 +72,7 @@ const AudioExtension = Node.create({
   group: 'block',
   atom: true,
   draggable: true,
-  addAttributes() { 
-      return { 
-          src: { default: null }, 
-          dataFileName: { 
-            default: null,
-            parseHTML: element => element.getAttribute('data-filename'),
-            renderHTML: attributes => {
-              if (!attributes.dataFileName) return {};
-              return { 'data-filename': attributes.dataFileName };
-            }
-          } 
-      } 
-  },
+  addAttributes() { return { src: { default: null }, 'data-filename': { default: null } } },
   parseHTML() { return [{ tag: 'audio' }] },
   renderHTML({ HTMLAttributes }) {
     return ['div', { class: 'my-2 p-3 bg-gray-100 dark:bg-gray-800 rounded-2xl flex items-center gap-3 border border-black/5' },
@@ -134,6 +102,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [isLoadingContent, setIsLoadingContent] = useState(true);
   const [isLockedOut, setIsLockedOut] = useState(false);
   
+  // Lock to prevent dirty updates during initial load
+  const loadingLockRef = useRef(true);
+
   const [tags, setTags] = useState<string[]>(note.tags || []);
   const [color, setColor] = useState(note.color || 'default');
   const [folderId, setFolderId] = useState(note.folderId || '');
@@ -193,11 +164,11 @@ export const EditorView: React.FC<EditorViewProps> = ({
       AudioExtension, Highlight.configure({ multicolor: true })
     ],
     editable: isEditing && !isLockedOut,
-    onUpdate: ({ editor }) => {
-        // Fix: Force dirty state on any update, regardless of focus.
-        // This ensures programmatic updates or updates that occur after focus loss are captured.
-        // Initial load uses emitUpdate: false so it won't trigger this.
-        setIsDirty(true);
+    onUpdate: () => {
+        // Only set dirty if the loading lock is released
+        if (!loadingLockRef.current) {
+             setIsDirty(true);
+        }
     },
     editorProps: {
       attributes: {
@@ -218,13 +189,13 @@ export const EditorView: React.FC<EditorViewProps> = ({
   useEffect(() => editor?.setEditable(isEditing && !isLoadingContent && !isLockedOut), [editor, isEditing, isLoadingContent, isLockedOut]);
 
   const expandMedia = useCallback(async (html: string): Promise<string> => {
-      console.log('[EditorView] Expanding media...');
       const div = document.createElement('div');
       div.innerHTML = html;
       
       // --- Security Sanitization ---
       const sanitizeNode = (node: Element) => {
           // 1. Remove dangerous elements
+          // Blocks: SCRIPT, IFRAME, OBJECT, EMBED, FORM, SVG, META, STYLE, LINK, BASE
           const forbiddenTags = ['SCRIPT', 'IFRAME', 'OBJECT', 'EMBED', 'FORM', 'SVG', 'META', 'STYLE', 'LINK', 'BASE', 'APPLET'];
           if (forbiddenTags.includes(node.tagName)) {
               node.remove();
@@ -237,9 +208,11 @@ export const EditorView: React.FC<EditorViewProps> = ({
               const name = attr.name.toLowerCase();
               const val = attr.value.toLowerCase().trim();
               
+              // Remove event handlers (onerror, onload, onclick, etc.)
               if (name.startsWith('on')) {
                   node.removeAttribute(attr.name);
               }
+              // Remove javascript/vbscript URIs in src/href
               if (['href', 'src', 'data', 'action'].includes(name)) {
                    if (val.startsWith('javascript:') || val.startsWith('vbscript:')) {
                        node.removeAttribute(attr.name);
@@ -258,97 +231,52 @@ export const EditorView: React.FC<EditorViewProps> = ({
           for (const el of Array.from(elements)) {
               const src = el.getAttribute('src');
               if (!src) continue;
-              
-              // Robustly decode and find the placeholder
-              try {
-                  const decodedSrc = decodeURIComponent(src);
-                  const match = decodedSrc.match(/\[\[FILE:([^\]]+)\]\]/);
-                  
-                  if (match) {
-                      const filename = match[1];
-                      console.log('[EditorView] Found placeholder for:', filename);
-                      // Attempt to resolve
-                      const url = await StorageService.getMediaUrl(filename);
-                      if (url) {
-                          el.setAttribute('src', url);
-                          el.setAttribute('data-filename', filename);
-                      } else {
-                          console.warn("[EditorView] Failed to resolve media URL for:", filename);
-                      }
+              const decodedSrc = decodeURIComponent(src);
+              const match = decodedSrc.match(/\[\[FILE:([^\]]+)\]\]/);
+              if (match) {
+                  const filename = match[1];
+                  const url = await StorageService.getMediaUrl(filename);
+                  if (url) {
+                      el.setAttribute('src', url);
+                      el.setAttribute('data-filename', filename);
                   }
-              } catch (e) {
-                  console.error("[EditorView] Error processing media element:", e);
               }
           }
       };
-      
       await processElements(div.querySelectorAll('img'));
       await processElements(div.querySelectorAll('audio'));
       return div.innerHTML;
   }, []);
 
   const compressMedia = async (html: string): Promise<string> => {
-      console.log('[EditorView] Compressing media...');
       const div = document.createElement('div');
       div.innerHTML = html;
       
       const images = Array.from(div.querySelectorAll('img'));
-      console.log(`[EditorView] Found ${images.length} images to compress`);
-      
       for (const img of images) {
           const src = img.getAttribute('src');
-          let filename = img.getAttribute('data-filename');
-
-          console.log('[EditorView] Processing Image:', { src: src ? src.substring(0, 50) + '...' : 'null', filename });
+          const filename = img.getAttribute('data-filename');
 
           if (filename) {
-               // Normal case: filename is preserved in attribute
+               // Existing tracked file
                img.setAttribute('src', `[[FILE:${filename}]]`);
           } else if (src && src.startsWith('data:')) {
-               // Found Base64 image (pasted or dropped) that hasn't been uploaded yet
-               console.log('[EditorView] Found base64 image without filename, saving...');
+               // Found Base64 image (pasted or dropped). 
+               // FIX: Only write to disk if NOT incognito
                if (!note.isIncognito) {
                    const newFilename = await StorageService.saveMedia(src);
                    if (newFilename) {
-                       console.log('[EditorView] Saved base64 image as:', newFilename);
                        img.setAttribute('src', `[[FILE:${newFilename}]]`);
                        img.setAttribute('data-filename', newFilename);
-                   } else {
-                       console.error('[EditorView] Failed to save base64 image');
                    }
                }
-          } else if (src && src.includes('_capacitor_file_')) {
-               // RECOVERY MODE: Attribute was lost, but src is a valid local file URL
-               console.warn('[EditorView] Image missing data-filename, attempting recovery from URL');
-               try {
-                   const parts = src.split('/');
-                   const potentialFilename = parts[parts.length - 1];
-                   if (potentialFilename && potentialFilename.includes('_')) {
-                       console.log('[EditorView] Recovered filename:', potentialFilename);
-                       img.setAttribute('src', `[[FILE:${potentialFilename}]]`);
-                       img.setAttribute('data-filename', potentialFilename);
-                   }
-               } catch(e) {}
           }
       }
 
       const audios = Array.from(div.querySelectorAll('audio'));
       for (const audio of audios) {
-         let filename = audio.getAttribute('data-filename');
-         const src = audio.getAttribute('src');
-         
-         if (filename) {
-             audio.setAttribute('src', `[[FILE:${filename}]]`);
-         } else if (src && src.includes('_capacitor_file_')) {
-             try {
-                const parts = src.split('/');
-                const potentialFilename = parts[parts.length - 1];
-                if (potentialFilename && potentialFilename.includes('_')) {
-                    audio.setAttribute('src', `[[FILE:${potentialFilename}]]`);
-                    audio.setAttribute('data-filename', potentialFilename);
-                }
-             } catch(e) {}
-         }
+         const filename = audio.getAttribute('data-filename');
+         if (filename) audio.setAttribute('src', `[[FILE:${filename}]]`);
       }
       return div.innerHTML;
   };
@@ -356,12 +284,16 @@ export const EditorView: React.FC<EditorViewProps> = ({
   // --- Content Loading ---
   useEffect(() => {
     const initContent = async () => {
-      if (!editor) return;
-
+      // PREVENT STATE LOSS FIX:
+      // If we are already decrypted and displaying this note, DO NOT reload content 
+      // just because activeNoteKey toggled (e.g. app backgrounded/locked).
+      // This preserves unsaved changes (dirty state) while waiting for re-auth.
       if (isDecrypted && note.id === lastLoadedNoteId.current) {
           return;
       }
 
+      // Ensure lock is active at start of load
+      loadingLockRef.current = true;
       setIsLoadingContent(true);
 
       let loadedContent = note.content;
@@ -381,6 +313,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
         if (!activeNoteKey || !loadedEncryptedData) {
            setDecryptionError(true);
            setIsLoadingContent(false);
+           loadingLockRef.current = false; // Release lock even on error
            return;
         }
         try {
@@ -396,6 +329,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
            console.error("Decryption fail", e);
            setDecryptionError(true);
            setIsLoadingContent(false);
+           loadingLockRef.current = false;
            return;
         }
       } else {
@@ -410,19 +344,27 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
       setTitle(loadedTitle);
       
-      editor.commands.setContent(expanded, { emitUpdate: false });
-      
-      if (initialSearchQuery) {
-          setEditorSearchTerm(initialSearchQuery);
-          setShowSearch(true);
-          setTimeout(() => performSearch(initialSearchQuery), 100);
+      if (editor) {
+          // Setting content triggers onUpdate, but loadingLockRef is true, so isDirty remains false
+          editor.commands.setContent(expanded);
+          
+          if (initialSearchQuery) {
+              setEditorSearchTerm(initialSearchQuery);
+              setShowSearch(true);
+              setTimeout(() => performSearch(initialSearchQuery), 100);
+          }
       }
       
+      // Mark as loaded for this ID
       lastLoadedNoteId.current = note.id;
 
-      if (isMounted.current) {
-          setIsLoadingContent(false);
-      }
+      // Delay releasing the lock slightly to allow any sync events to settle
+      setTimeout(() => {
+          if (isMounted.current) {
+              loadingLockRef.current = false;
+              setIsLoadingContent(false);
+          }
+      }, 50);
     };
     initContent();
   }, [note.id, note.isEncrypted, activeNoteKey, editor, expandMedia, isDecrypted]); 
@@ -473,7 +415,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   const handleSave = useCallback(async () => {
     // Prevent saving if editor is not ready or content is still loading to avoid overwriting with empty content
-    if (!editor || isLoadingContent) return;
+    if (!editor || loadingLockRef.current) return;
     
     // Check if locked out (key missing)
     if (isLockedOut) {
@@ -492,10 +434,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
     }
 
     const currentHtml = editor.getHTML();
-    console.log('[EditorView] Raw HTML from editor:', currentHtml);
     const plainText = editor.getText();
     const compressedContent = await compressMedia(currentHtml);
-    console.log('[EditorView] Compressed content for storage:', compressedContent);
 
     // Prepare base properties (excluding content/encryption specific fields)
     const baseNote: Note = {
@@ -512,6 +452,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     let finalNote: Note;
 
     if (baseNote.isLocked) {
+        // SECURITY CHECK: Abort save if key is missing
         if (!activeNoteKey) {
             console.warn("Save aborted: Note is locked but encryption key is missing.");
             return;
@@ -524,8 +465,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
             
             finalNote = {
                 ...baseNote,
-                title: "", 
-                content: undefined, 
+                title: "", // Privacy: Clear title from metadata so it's not visible in list
+                content: undefined, // Explicitly undefined so StorageService cleans up plaintext
                 encryptedData: encryptedString,
                 plainTextPreview: "",
             };
@@ -542,6 +483,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
             return; 
         }
     } else {
+        // Unlocked mode
         finalNote = {
             ...baseNote,
             content: compressedContent,
@@ -549,12 +491,14 @@ export const EditorView: React.FC<EditorViewProps> = ({
             encryptedData: undefined,
             lockMode: undefined,
             security: undefined,
-            isLocked: false 
+            isLocked: false // Enforce unlocked state if we are here
         };
     }
 
+    // Pass the full plain text for indexing
     onSave(finalNote, plainText);
     
+    // Check if mounted before updating local state
     if (isMounted.current) {
         setIsDirty(false);
         console.log('[EditorView] Save complete. isDirty reset to false.');
@@ -566,18 +510,18 @@ export const EditorView: React.FC<EditorViewProps> = ({
   useEffect(() => { handleSaveRef.current = handleSave; }, [handleSave]);
 
   const handleBackAction = useCallback(async () => {
+      // FIX: Clear pending autosave to prevent race conditions
       if (saveTimeoutRef.current) {
           clearTimeout(saveTimeoutRef.current);
           saveTimeoutRef.current = null;
       }
 
-      console.log('[EditorView] handleBackAction - isDirty:', isDirty);
-
       if (isDirty) {
-          await handleSave(); 
+          await handleSave(); // WAIT for save to complete before unmounting
           triggerHaptic(20);
       }
       
+      // Explicitly prevent unmount cleanup since we handled save/dirty state here
       skipSaveOnUnmount.current = true;
       onBack();
   }, [isDirty, onBack, handleSave]);
@@ -595,6 +539,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     if (!isDecrypted || isLoadingContent) return;
     
+    // CRITICAL FIX: Only schedule autosave if strictly dirty
     if (isDirty) {
         console.log('[EditorView] Scheduling autosave (dirty=true)');
         saveTimeoutRef.current = setTimeout(() => { handleSave(); }, 2000); 
@@ -603,6 +548,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
     return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
   }, [title, tags, color, folderId, location, handleSave, isDecrypted, isLoadingContent, isDirty]);
 
+  // Ensure save on App Background/Pause (e.g. switching apps, home button)
+  // This covers the case where "unmount" cleanup might not run reliably on OS kill
   useEffect(() => {
       const listener = CapacitorApp.addListener('appStateChange', ({ isActive }) => {
           if (!isActive && isDirty && !isLoadingContent && !isLockedOut) {
@@ -613,6 +560,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
       return () => { listener.then(h => h.remove()); };
   }, [isDirty, isLoadingContent, isLockedOut]);
 
+  // Standard cleanup - attempts to save on component unmount
   useEffect(() => { return () => { if (!skipSaveOnUnmount.current) handleSaveRef.current(); }; }, []);
 
   // --- Actions ---
@@ -620,27 +568,21 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const removeTag = (t: string) => { setTags(tags.filter(tag => tag !== t)); setIsDirty(true); };
   
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      console.log('[EditorView] Image upload started');
-      setIsDirty(true); // Force dirty state to ensure save on exit even if editor not focused
       const file = e.target.files?.[0];
       if (file && editor) {
           const reader = new FileReader();
           reader.onload = async (event) => {
               const base64 = event.target?.result as string;
               if (base64) {
-                  console.log('[EditorView] Image loaded into base64');
+                  // FIX: Incognito leak check
                   if (note.isIncognito) {
+                      // Keep inline, do not save to disk
                       editor.chain().focus().insertContent({ type: 'image', attrs: { src: base64 } }).run();
                   } else {
                       const filename = await StorageService.saveMedia(base64);
-                      console.log('[EditorView] Saved media to storage:', filename);
                       if (filename) {
                           const url = await StorageService.getMediaUrl(filename);
-                          console.log('[EditorView] Resolved media URL:', url);
-                          if (url) {
-                              editor.chain().focus().insertContent({ type: 'image', attrs: { src: url, dataFileName: filename } }).run();
-                              console.log('[EditorView] Inserted image into editor with filename attr');
-                          }
+                          if (url) editor.chain().focus().insertContent({ type: 'image', attrs: { src: url, 'data-filename': filename } }).run();
                       }
                   }
               }
@@ -652,7 +594,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   const toggleRecording = async () => {
       triggerHaptic(20);
-      setIsDirty(true); // Force dirty state for new audio
       if (isRecording) {
           mediaRecorderRef.current?.stop();
           setIsRecording(false);
@@ -668,13 +609,14 @@ export const EditorView: React.FC<EditorViewProps> = ({
                   reader.readAsDataURL(audioBlob);
                   reader.onloadend = async () => {
                       const base64data = reader.result as string;
+                      // FIX: Incognito leak check
                       if (note.isIncognito) {
                            editor.chain().focus().insertContent({ type: 'audio', attrs: { src: base64data } }).run();
                       } else {
                           const filename = await StorageService.saveMedia(base64data);
                           if (filename && editor) {
                             const url = await StorageService.getMediaUrl(filename);
-                            if (url) editor.chain().focus().insertContent({ type: 'audio', attrs: { src: url, dataFileName: filename } }).run();
+                            if (url) editor.chain().focus().insertContent({ type: 'audio', attrs: { src: url, 'data-filename': filename } }).run();
                           }
                       }
                       stream.getTracks().forEach(track => track.stop());
@@ -733,6 +675,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
             </button>
             
             <div className="flex gap-1 items-center">
+                 {/* Only show status if Editing OR Dirty */}
                  {(isEditing || isDirty) && (
                      <>
                         {!isDirty && (

@@ -51,57 +51,55 @@ export class BackupService {
         const BATCH_SIZE = 10; // Small batch size to keep memory usage low
         let hasWrittenNote = false;
 
-        try {
-            for (let i = 0; i < activeMetadata.length; i += BATCH_SIZE) {
-                const batchMeta = activeMetadata.slice(i, i + BATCH_SIZE);
+        for (let i = 0; i < activeMetadata.length; i += BATCH_SIZE) {
+            const batchMeta = activeMetadata.slice(i, i + BATCH_SIZE);
+            
+            // Fetch content for current batch only
+            // Avoids StorageService.getFullNote() to prevent repeated index reads
+            const batchNotes = await Promise.all(batchMeta.map(async (meta) => {
+                const note: Note = { ...meta };
                 
-                // Fetch content for current batch only
-                // Avoids StorageService.getFullNote() to prevent repeated index reads
-                const batchNotes = await Promise.all(batchMeta.map(async (meta) => {
-                    const note: Note = { ...meta };
-                    
-                    if (meta.isEncrypted) {
-                        const encData = await StorageService.getEncryptedData(meta.id);
-                        if (encData) note.encryptedData = encData;
-                    } else {
-                        // Fetch plain content
-                        note.content = await StorageService.getNoteContent(meta.id);
-                    }
-                    return note;
-                }));
-
-                // Construct batch string
-                let batchString = "";
-                for (const note of batchNotes) {
-                    if (hasWrittenNote) {
-                        batchString += ",\n";
-                    }
-                    batchString += JSON.stringify(note, null, 2);
-                    hasWrittenNote = true;
+                if (meta.isEncrypted) {
+                    const encData = await StorageService.getEncryptedData(meta.id);
+                    if (encData) note.encryptedData = encData;
+                } else {
+                    // Fetch plain content
+                    note.content = await StorageService.getNoteContent(meta.id);
                 }
+                return note;
+            }));
 
-                // Append batch to file
-                if (batchString.length > 0) {
-                    await Filesystem.appendFile({
-                        path: fileName,
-                        data: batchString,
-                        directory: Directory.Cache,
-                        encoding: Encoding.UTF8
-                    });
+            // Construct batch string
+            let batchString = "";
+            for (const note of batchNotes) {
+                if (hasWrittenNote) {
+                    batchString += ",\n";
                 }
-                
-                // Help GC
-                batchNotes.length = 0;
+                batchString += JSON.stringify(note, null, 2);
+                hasWrittenNote = true;
             }
-        } finally {
-            // 4. Close JSON Structure (Guaranteed execution)
-            await Filesystem.appendFile({
-                path: fileName,
-                data: '\n  ]\n}',
-                directory: Directory.Cache,
-                encoding: Encoding.UTF8
-            });
+
+            // Append batch to file
+            if (batchString.length > 0) {
+                await Filesystem.appendFile({
+                    path: fileName,
+                    data: batchString,
+                    directory: Directory.Cache,
+                    encoding: Encoding.UTF8
+                });
+            }
+            
+            // Help GC
+            batchNotes.length = 0;
         }
+
+        // 4. Close JSON Structure
+        await Filesystem.appendFile({
+            path: fileName,
+            data: '\n  ]\n}',
+            directory: Directory.Cache,
+            encoding: Encoding.UTF8
+        });
 
         // 5. Share the file
         const result = await Filesystem.getUri({
