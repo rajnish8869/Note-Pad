@@ -1,7 +1,6 @@
-
-import React from 'react';
-import { Icon } from './Icon';
-import { useTheme } from '../contexts/ThemeContext';
+import React from "react";
+import { Icon } from "./Icon";
+import { useTheme } from "../contexts/ThemeContext";
 
 interface FABProps {
   onClick: () => void;
@@ -9,11 +8,11 @@ interface FABProps {
 
 export const FAB: React.FC<FABProps> = ({ onClick }) => {
   const { theme, styles } = useTheme();
-  
+
   const handleClick = () => {
-      if (navigator.vibrate) navigator.vibrate(15);
-      onClick();
-  }
+    if (navigator.vibrate) navigator.vibrate(15);
+    onClick();
+  };
 
   return (
     <button

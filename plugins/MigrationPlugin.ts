@@ -1,6 +1,5 @@
-
-import { registerPlugin } from '@capacitor/core';
-import { Note } from '../types';
+import { registerPlugin } from "@capacitor/core";
+import { Note } from "../types";
 
 export interface MigrationPluginContract {
   /**
@@ -15,9 +14,19 @@ export interface MigrationPluginContract {
    */
   ackBatch(): Promise<void>;
 
-  addListener(eventName: 'onNotesBatch', listenerFunc: (data: { notes: Note[] }) => void): Promise<any>;
-  addListener(eventName: 'onMigrationComplete', listenerFunc: () => void): Promise<any>;
-  addListener(eventName: 'onMigrationError', listenerFunc: (error: { message: string }) => void): Promise<any>;
+  addListener(
+    eventName: "onNotesBatch",
+    listenerFunc: (data: { notes: Note[] }) => void
+  ): Promise<any>;
+  addListener(
+    eventName: "onMigrationComplete",
+    listenerFunc: () => void
+  ): Promise<any>;
+  addListener(
+    eventName: "onMigrationError",
+    listenerFunc: (error: { message: string }) => void
+  ): Promise<any>;
 }
 
-export const MigrationPlugin = registerPlugin<MigrationPluginContract>('MigrationPlugin');
+export const MigrationPlugin =
+  registerPlugin<MigrationPluginContract>("MigrationPlugin");
